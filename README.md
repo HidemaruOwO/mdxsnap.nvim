@@ -4,22 +4,22 @@ A Neovim plugin to paste clipboard images into MDX files by saving and inserting
 
 ## 🚀 Features
 
--   Paste images directly from a clipboard path using the `:PasteImage` command.
--   Supports OS-standard clipboard tools:
-    -   macOS: `pbpaste`
-    -   Linux: `wl-paste` (preferred) or `xclip`
-    -   Windows: PowerShell (`Get-Clipboard`)
--   Automatically expands shell variables like `~` and `$HOME` in path configurations.
--   Flexible image saving locations:
-    -   Default path settings (`DefaultPastePath`, `DefaultPastePathType`).
-    -   Project-specific overrides (`ProjectOverrides`) based on project name or full path.
--   Automatic insertion of custom import statements (`customImports`).
--   Customizable image reference text format (`customTextFormat`).
+- Paste images directly from a clipboard full path or raw data using the `:PasteImage` command.
+- Supports OS-standard clipboard tools:
+  - macOS: `pbpaste` and `osascript`
+  - Linux: `wl-paste` (preferred) or `xclip` (untested)
+  - Windows: PowerShell (`Get-Clipboard`) (untested)
+- Automatically expands shell variables like `~` and `$HOME` in path configurations.
+- Flexible image saving locations:
+  - Default path settings (`DefaultPastePath`, `DefaultPastePathType`).
+  - Project-specific overrides (`ProjectOverrides`) based on project name or full path.
+- Automatic insertion of custom import statements (`customImports`).
+- Customizable image reference text format (`customTextFormat`).
 
 ## 🪡 Prerequisites
 
--   Neovim (0.10+ recommended)
--   A command-line clipboard tool for your OS (see Features list).
+- Neovim (0.10+ recommended)
+- A command-line clipboard tool for your OS (see Features list).
 
 ## 🛠 Installation
 
@@ -33,12 +33,12 @@ Plug 'HidemaruOwO/mdxsnap.nvim'
 
 ```vim
 call dein#add('HidemaruOwO/mdxsnap.nvim')
-````
+```
 
 - Using `packer.nvim`
 
 ```lua
-use { 
+use {
   'HidemaruOwO/mdxsnap.nvim',
   config = function()
     require('mdxsnap').setup()
@@ -66,10 +66,10 @@ use {
     :PasteImage
     ```
 4.  **The plugin will:**
-    *   Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
-    *   Add necessary import statements (if configured via `customImports`).
-    *   Insert an image reference at your cursor (formatted by `customTextFormat`).
-    *   Show a success notification.
+    - Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
+    - Add necessary import statements (if configured via `customImports`).
+    - Insert an image reference at your cursor (formatted by `customTextFormat`).
+    - Show a success notification.
 
 ## 🔧 Configuration
 
@@ -130,17 +130,17 @@ require("mdxsnap.config").setup({
 
 **Key Configuration Options:**
 
-*   `DefaultPastePath` (string): Default directory for saving images. Initial default is `"mdxsnaps_data/images/posts"`.
-*   `DefaultPastePathType` (string): How `DefaultPastePath` is interpreted. Can be `"relative"` (to project root) or `"absolute"`. Initial default is `"relative"`.
-*   `ProjectOverrides` (table of tables): A list of rules to override default settings for specific projects.
-    *   `matchType` (string): `"projectName"` (matches the project root's directory name) or `"projectPath"` (matches the project root's absolute path, supports `~`, `$HOME`).
-    *   `matchValue` (string): The value to match against (e.g., "my-blog", "~/dev/project-x").
-    *   `PastePath` (string): The path to use if this rule matches.
-    *   `PastePathType` (string): The type (`"relative"` or `"absolute"`) for this rule's `PastePath`.
-*   `customImports` (table of tables): List of import statements to automatically add if not present.
-    *   `line` (string): The full import statement.
-    *   `checkRegex` (string): A string or Lua pattern to check if a similar import already exists.
-*   `customTextFormat` (string): A format string for the text inserted into the document.
+- `DefaultPastePath` (string): Default directory for saving images. Initial default is `"mdxsnaps_data/images/posts"`.
+- `DefaultPastePathType` (string): How `DefaultPastePath` is interpreted. Can be `"relative"` (to project root) or `"absolute"`. Initial default is `"relative"`.
+- `ProjectOverrides` (table of tables): A list of rules to override default settings for specific projects.
+  - `matchType` (string): `"projectName"` (matches the project root's directory name) or `"projectPath"` (matches the project root's absolute path, supports `~`, `$HOME`).
+  - `matchValue` (string): The value to match against (e.g., "my-blog", "~/dev/project-x").
+  - `PastePath` (string): The path to use if this rule matches.
+  - `PastePathType` (string): The type (`"relative"` or `"absolute"`) for this rule's `PastePath`.
+- `customImports` (table of tables): List of import statements to automatically add if not present.
+  - `line` (string): The full import statement.
+  - `checkRegex` (string): A string or Lua pattern to check if a similar import already exists.
+- `customTextFormat` (string): A format string for the text inserted into the document.
 
 Remember to restart Neovim or re-source your configuration after making changes.
 
