@@ -9,10 +9,28 @@ local function normalize_slashes(path)
   return path:gsub("[/\\]+", "/")
 end
 
+local function url_decode(str)
+  if not str then return nil end
+  str = str:gsub("+", " ") -- '+' to space first
+  str = str:gsub("%%(%x%x)", function(hex)
+    return string.char(tonumber(hex, 16))
+  end)
+  return str
+end
+
 local function get_os_type()
-  if vim.fn.has("macunix") then return "mac"
+  local uname = vim.loop.os_uname()
+  if uname then
+    if uname.sysname == "Windows_NT" then return "windows"
+    elseif uname.sysname == "Darwin" then return "mac"
+    elseif uname.sysname == "Linux" then return "linux"
+    elseif uname.sysname:match("BSD$") then return "linux" -- Treat BSD variants as 'linux' for this plugin's purpose
+    end
+  end
+  -- Fallback to vim.fn.has if os_uname is not conclusive or available
+  if vim.fn.has("win32") or vim.fn.has("win64") then return "windows"
+  elseif vim.fn.has("macunix") then return "mac"
   elseif vim.fn.has("unix") then return "linux"
-  elseif vim.fn.has("win32") or vim.fn.has("win64") then return "windows"
   end
   return "unknown"
 end
@@ -118,7 +136,7 @@ local function fetch_image_path_from_clipboard_macos()
     return nil, "sips ran, but PNG file was not created: " .. tmp_png_path, false
   end
 
-  return tmp_png_path, true -- path, is_temporary
+  return tmp_png_path, true, nil -- path, is_temporary, error_message (nil on success)
 end
 
 
@@ -147,33 +165,140 @@ local function fetch_image_path_from_clipboard()
       return expanded_path_pb, false
     end
   elseif os_type == "linux" then
-    local cmd_linux
-    if vim.fn.executable("wl-paste") then cmd_linux = "wl-paste -n"
-    elseif vim.fn.executable("xclip") then cmd_linux = "xclip -selection clipboard -o"
-    else return nil, "Clipboard tool (wl-paste or xclip) not found.", false
+    local is_wayland = vim.env.WAYLAND_DISPLAY ~= nil
+
+    if is_wayland then
+      if vim.fn.executable("wl-paste") then
+        -- 1. Try to get image via MIME types
+        local list_types_cmd = "wl-paste --list-types"
+        local types_handle = io.popen(list_types_cmd)
+        local available_types_str = ""
+        if types_handle then
+          available_types_str = types_handle:read("*a")
+          types_handle:close()
+        end
+
+        local image_mime_map = {
+          ["image/png"] = ".png",
+          ["image/jpeg"] = ".jpg",
+          ["image/gif"] = ".gif",
+          ["image/webp"] = ".webp",
+          -- Consider adding more types like image/bmp, image/tiff if needed
+          -- ["image/svg+xml"] = ".svg", -- SVG might be text, requires careful handling if treated as binary
+        }
+        local selected_mime_type = nil
+        local selected_extension = nil
+
+        -- Prioritize PNG, then JPEG, then others. Could be made more sophisticated.
+        local preferred_order = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+        for _, preferred_mime in ipairs(preferred_order) do
+            if available_types_str:find(preferred_mime, 1, true) and image_mime_map[preferred_mime] then
+                selected_mime_type = preferred_mime
+                selected_extension = image_mime_map[preferred_mime]
+                break
+            end
+        end
+        -- If not found in preferred, check rest of the map
+        if not selected_mime_type then
+            for mime_type, extension in pairs(image_mime_map) do
+                if available_types_str:find(mime_type, 1, true) then
+                    selected_mime_type = mime_type
+                    selected_extension = extension
+                    break
+                end
+            end
+        end
+
+        if selected_mime_type and selected_extension then
+          local tmp_dir_img = get_tmp_dir()
+          if tmp_dir_img then
+            local timestamp_img = tostring(vim.loop.now())
+            local tmp_image_path = normalize_slashes(tmp_dir_img .. "/clip_" .. timestamp_img .. selected_extension)
+            local paste_img_cmd = string.format("wl-paste --type %s > '%s'", selected_mime_type, tmp_image_path)
+            vim.fn.system(paste_img_cmd)
+            if vim.v.shell_error == 0 and vim.fn.filereadable(tmp_image_path) == 1 and vim.fn.getfsize(tmp_image_path) > 0 then
+              return tmp_image_path, true, nil
+            else
+              cleanup_tmp_file(tmp_image_path)
+            end
+          end
+        end
+
+        -- 2. Fallback to text path (wl-paste -n) if image MIME type processing fails or not applicable
+        local cmd_text = "wl-paste -n"
+        local text_handle = io.popen(cmd_text)
+        local result_text = ""
+        if text_handle then
+          result_text = text_handle:read("*a")
+          text_handle:close()
+          result_text = result_text:gsub("[\r\n]", "")
+        end
+
+        if result_text ~= "" then
+          local final_path_candidate = result_text
+          if final_path_candidate:match("^file://") then
+            final_path_candidate = final_path_candidate:sub(8) -- Remove "file://"
+            final_path_candidate = url_decode(final_path_candidate)
+            if not final_path_candidate then
+               return nil, false, "Wayland: Failed to URL decode file URI from clipboard."
+            end
+          -- Basic check to avoid treating obvious HTML/XML as a path, unless it has a common file extension
+          elseif final_path_candidate:match("<[a-zA-Z%s\"'=/%;:%-_%.%?#&]+>") and not final_path_candidate:match("%.[a-zA-Z0-9]+$") then
+            return nil, false, "Wayland: Clipboard text via wl-paste -n appears to be HTML/XML, not a file path."
+          end
+
+          local expanded_path, err_expand = expand_shell_vars_in_path(final_path_candidate)
+          if expanded_path then
+            -- Further check if it's a readable file, especially after potential URL decoding or if it wasn't an image
+            if vim.fn.filereadable(expanded_path) == 1 then
+                 return expanded_path, false, nil
+            else
+                -- If it was a file URI that's not readable, or other non-image text that's not a path
+                return nil, false, "Wayland: Clipboard text (path candidate) is not a readable file: " .. expanded_path
+            end
+          else
+            return nil, false, "Wayland: Failed to expand clipboard text (path candidate): " .. (err_expand or "unknown error")
+          end
+        end
+        return nil, false, "Wayland: wl-paste could not provide a usable image or file path from clipboard."
+      else
+        return nil, false, "Wayland environment detected, but wl-paste command not found."
+      end
+    else -- X11 or other (non-Wayland Linux)
+      if vim.fn.executable("xclip") then
+        local cmd_linux_x11_text = "xclip -selection clipboard -o"
+        local handle_x11_text = io.popen(cmd_linux_x11_text)
+        if handle_x11_text then
+          local result_x11_text = handle_x11_text:read("*a")
+          handle_x11_text:close()
+          result_x11_text = result_x11_text:gsub("[\r\n]", "")
+          if result_x11_text ~= "" then
+            local expanded_path_x11_text, err_expand_x11_text = expand_shell_vars_in_path(result_x11_text)
+            if expanded_path_x11_text then
+              return expanded_path_x11_text, false, nil
+            else
+              return nil, false, "X11: Failed to expand clipboard text path: " .. (err_expand_x11_text or "unknown error")
+            end
+          end
+        end
+        return nil, false, "X11: xclip found but failed to get text path from clipboard."
+      else
+        return nil, false, "X11 environment: xclip command not found."
+      end
     end
-    local handle_linux = io.popen(cmd_linux)
-    if not handle_linux then return nil, "Failed to execute clipboard command: " .. cmd_linux, false end
-    local result_linux = handle_linux:read("*a")
-    handle_linux:close()
-    result_linux = result_linux:gsub("[\r\n]", "")
-    if result_linux == "" then return nil, "Clipboard is empty or does not contain text.", false end
-    local expanded_path_linux, err_expand_linux = expand_shell_vars_in_path(result_linux)
-    if not expanded_path_linux then return nil, err_expand_linux, false end
-    return expanded_path_linux, false
   elseif os_type == "windows" then
     local cmd_win = "powershell -command \"Get-Clipboard -Format Text -Raw\""
     local handle_win = io.popen(cmd_win)
-    if not handle_win then return nil, "Failed to execute clipboard command: " .. cmd_win, false end
+    if not handle_win then return nil, false, "Windows: Failed to execute PowerShell Get-Clipboard." end
     local result_win = handle_win:read("*a")
     handle_win:close()
     result_win = result_win:gsub("[\r\n]", "")
-    if result_win == "" then return nil, "Clipboard is empty or does not contain text.", false end
+    if result_win == "" then return nil, false, "Windows: Clipboard is empty or does not contain text." end
     local expanded_path_win, err_expand_win = expand_shell_vars_in_path(result_win)
-    if not expanded_path_win then return nil, err_expand_win, false end
-    return expanded_path_win, false
+    if not expanded_path_win then return nil, false, "Windows: Failed to expand clipboard text path: " .. (err_expand_win or "unknown error") end
+    return expanded_path_win, false, nil
   else
-    return nil, "Unsupported OS for clipboard access.", false
+    return nil, false, "Unsupported OS for clipboard access."
   end
 end
 
