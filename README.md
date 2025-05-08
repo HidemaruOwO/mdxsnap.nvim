@@ -59,13 +59,13 @@ use {
 
 ## 🎯 Usage
 
-1.  **Open an MDX/Markdown file.**
-2.  **Copy the full absolute path of an image file** to your system clipboard.
+1.  Open an MDX/Markdown file.
+2.  Copy the full absolute path of an image file to your system clipboard.
 3.  In Neovim (normal mode), run:
     ```vim
     :PasteImage
     ```
-4.  **The plugin will:**
+4.  The plugin will:
     - Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
     - Add necessary import statements (if configured via `customImports`).
     - Insert an image reference at your cursor (formatted by `customTextFormat`).
