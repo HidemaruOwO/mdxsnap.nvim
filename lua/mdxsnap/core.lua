@@ -2,6 +2,13 @@ local config_module = require("mdxsnap.config")
 local M = {}
 
 -- Helper Functions
+
+-- Normalizes path slashes (both / and \ to a single /)
+local function normalize_slashes(path)
+  if not path then return nil end
+  return path:gsub("[/\\]+", "/")
+end
+
 local function get_os_type()
   if vim.fn.has("macunix") then return "mac"
   elseif vim.fn.has("unix") then return "linux"
@@ -60,10 +67,10 @@ local function fetch_image_path_from_clipboard_macos()
   if not tmp_dir then return nil, "Could not get/create mdxsnap temp directory.", false end
 
   local timestamp = tostring(vim.loop.now()) -- Use Lua's tostring
-  local tmp_tiff_path = tmp_dir .. "/clip_" .. timestamp .. ".tiff"
-  local tmp_png_path = tmp_dir .. "/clip_" .. timestamp .. ".png"
+  local tmp_tiff_path = normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
+  local tmp_png_path = normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".png")
 
-  -- 1. Save clipboard image as TIFF
+
   local osascript_cmd = string.format(
     "osascript -e 'tell app \"System Events\" to write (the clipboard as «class TIFF») to (open for access POSIX file \"%s\" with write permission)'",
     tmp_tiff_path
@@ -87,7 +94,6 @@ local function fetch_image_path_from_clipboard_macos()
     return nil, "osascript ran, but TIFF file was not created (clipboard might not contain image data): " .. tmp_tiff_path, false
   end
 
-  -- 2. Convert TIFF to PNG using sips
   local sips_cmd = string.format(
     "sips -s format png \"%s\" --out \"%s\"",
     tmp_tiff_path, tmp_png_path
@@ -118,10 +124,11 @@ end
 
 local function fetch_image_path_from_clipboard()
   local os_type = get_os_type()
-  local is_temp_file = false
+  -- local is_temp_file = false -- This variable is set within the branches
 
   if os_type == "mac" then
     local raw_image_path, is_temp, err_macos
+    -- fetch_image_path_from_clipboard_macos should return 3 values: path, is_temp_flag, error_msg
     raw_image_path, is_temp, err_macos = fetch_image_path_from_clipboard_macos()
     if raw_image_path then
       return raw_image_path, is_temp
@@ -228,7 +235,8 @@ local function build_final_paste_base_path(paste_config)
 
   if active_paste_path_type == "relative" then
     if not project_root_abs_path then return nil, "Cannot resolve relative path: project root not found." end
-    resolved_base = project_root_abs_path .. "/" .. active_paste_path
+    local clean_active_path = active_paste_path:gsub("^[/\\]+", "")
+    resolved_base = project_root_abs_path .. "/" .. clean_active_path
   elseif active_paste_path_type == "absolute" then
     resolved_base = active_paste_path
   else
@@ -236,11 +244,12 @@ local function build_final_paste_base_path(paste_config)
   end
 
   if not resolved_base or resolved_base == "" then return nil, "Resolved PastePath is empty." end
-  return vim.fn.fnamemodify(resolved_base, ":p"):gsub("\\", "/")
+  return normalize_slashes(vim.fn.fnamemodify(resolved_base, ":p"))
 end
 
 local function ensure_target_directory_exists(base_path, mdx_filename_no_ext)
-  local image_subdir = base_path .. "/" .. mdx_filename_no_ext
+  local clean_mdx_filename = mdx_filename_no_ext:gsub("^[/\\]+", "")
+  local image_subdir = normalize_slashes(base_path .. "/" .. clean_mdx_filename)
   if vim.fn.isdirectory(image_subdir) == 0 then
     vim.fn.mkdir(image_subdir, "p")
     if vim.fn.isdirectory(image_subdir) == 0 then
@@ -298,11 +307,11 @@ local function copy_image_file(clipboard_path, target_dir, original_extension)
 
   local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
   local new_filename = random_string .. original_extension
-  local new_image_full_path = target_dir .. "/" .. new_filename
-  new_image_full_path = vim.fn.fnamemodify(new_image_full_path, ":p"):gsub("\\", "/")
+  local new_image_full_path = normalize_slashes(target_dir .. "/" .. new_filename)
+  new_image_full_path = normalize_slashes(vim.fn.fnamemodify(new_image_full_path, ":p"))
 
   local copy_cmd
-  local os_type_copy = get_os_type() -- Use a different variable name to avoid conflict
+  local os_type_copy = get_os_type()
   if os_type_copy == "mac" or os_type_copy == "linux" then
     copy_cmd = string.format("cp '%s' '%s'", clipboard_path, new_image_full_path)
   elseif os_type_copy == "windows" then
@@ -359,11 +368,39 @@ local function ensure_imports_are_present(bufnr, custom_imports)
 end
 
 local function format_image_reference_text(new_image_full_path, new_filename_only, custom_text_format, project_root_abs_path, active_paste_path_type)
-  local image_path_for_text = new_image_full_path
-  if active_paste_path_type == "relative" and project_root_abs_path and new_image_full_path:find(project_root_abs_path, 1, true) == 1 then
-    local rel_path = new_image_full_path:sub(#project_root_abs_path + 1)
-    if rel_path:sub(1,1) ~= "/" then rel_path = "/" .. rel_path end
-    image_path_for_text = rel_path
+  local image_path_for_text = normalize_slashes(new_image_full_path)
+
+  if active_paste_path_type == "relative" and project_root_abs_path then
+    local normalized_project_root = normalize_slashes(project_root_abs_path .. "/")
+    if image_path_for_text:find(normalized_project_root, 1, true) == 1 then
+      local rel_path = image_path_for_text:sub(#normalized_project_root + 1)
+      if rel_path ~= "" and rel_path:sub(1,1) ~= "/" then
+        rel_path = "/" .. rel_path
+      elseif rel_path == "" then
+         -- This case implies the image is at the project root, so the path should be like "/image.png"
+         -- However, our structure usually puts it in subdirs. If it truly is at root,
+         -- and new_image_full_path was "/image.png", then sub() would be empty.
+         -- For safety, ensure it starts with a slash if it's meant to be root-relative.
+         -- This logic might need refinement based on how DefaultPastePath can be empty.
+         -- If DefaultPastePath is empty, image_subdir becomes base_path .. "/" .. mdx_filename_no_ext
+         -- and new_image_full_path becomes target_dir .. "/" .. new_filename
+         -- If target_dir is project_root, then rel_path would be "mdx_filename_no_ext/new_filename"
+         -- So, adding a leading slash is generally correct for project-relative paths.
+        rel_path = "/" .. new_filename_only -- Fallback to ensure it's a valid path segment
+        if image_path_for_text:sub(#normalized_project_root + 1) ~= new_filename_only then
+            -- If the original rel_path was more complex, try to preserve it with a leading slash
+            local original_sub_path = image_path_for_text:sub(#normalized_project_root + 1)
+            if original_sub_path ~= "" and original_sub_path:sub(1,1) ~= "/" then
+                rel_path = "/" .. original_sub_path
+            elseif original_sub_path == "" then
+                 rel_path = "/" -- Should not happen if image is in a sub-folder of project root
+            else
+                rel_path = original_sub_path
+            end
+        end
+      end
+      image_path_for_text = normalize_slashes(rel_path)
+    end
   end
 
   local alt_text = extract_filename_stem(new_filename_only)
@@ -410,7 +447,7 @@ M.paste_image = function()
 
   local original_extension
   if is_temporary_clipboard_file then
-    original_extension = ".png" -- macOS raw image is converted to PNG by sips
+    original_extension = ".png"
   else
     local ext_match = clipboard_image_path:match("%.([^%./\\]+)$")
     if not ext_match then
