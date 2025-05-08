@@ -1,59 +1,148 @@
-# MicroRepository 📚
+# mdxsnap.nvim 📸
 
-A template that gathers the minimal structure of my repository.
+A Neovim plugin to paste clipboard images into MDX files by saving and inserting image links automatically.
 
 ## 🚀 Features
 
-- Modern README
-- Multiple licenses: `Apache 2.0` and `SUSHI-WARE`
+-   Paste images directly from a clipboard path using the `:PasteImage` command.
+-   Supports OS-standard clipboard tools:
+    -   macOS: `pbpaste`
+    -   Linux: `wl-paste` (preferred) or `xclip`
+    -   Windows: PowerShell (`Get-Clipboard`)
+-   Automatically expands shell variables like `~` and `$HOME` in path configurations.
+-   Flexible image saving locations:
+    -   Default path settings (`DefaultPastePath`, `DefaultPastePathType`).
+    -   Project-specific overrides (`ProjectOverrides`) based on project name or full path.
+-   Automatic insertion of custom import statements (`customImports`).
+-   Customizable image reference text format (`customTextFormat`).
 
-<!-- ## 🛠 Installation -->
+## 🪡 Prerequisites
 
-<!-- ```bash -->
-<!-- brew install micro-repository -->
-<!-- ``` -->
+-   Neovim (0.10+ recommended)
+-   A command-line clipboard tool for your OS (see Features list).
 
-<!-- ### 🏗 Build from Source -->
+## 🛠 Installation
 
-<!-- ```sh -->
-<!-- git clone https://github.com/HidemaruOwO/MicroRepository.git -->
-<!-- cd MicroRepository -->
+- Using `vim-plug`
 
-<!-- make -j8 -->
+```vim
+Plug 'HidemaruOwO/mdxsnap.nvim'
+```
 
-<!-- install -Dm0755 -t "/usr/local/bin/" "dist/builded-binary" -->
-<!-- ``` -->
+- Using `dein`
 
-<!-- - Arch Linux -->
+```vim
+call dein#add('HidemaruOwO/mdxsnap.nvim')
+````
 
-<!-- ```sh -->
-<!-- git clone https://github.com/HidemaruOwO/MicroRepository.git -->
-<!-- cd MicroRepository -->
+- Using `packer.nvim`
 
-<!-- makepkg -si -->
-<!-- ``` -->
+```lua
+use { 
+  'HidemaruOwO/mdxsnap.nvim',
+  config = function()
+    require('mdxsnap').setup()
+  end
+}
+```
+
+- Using `lazy.nvim`
+
+```lua
+{
+  'HidemaruOwO/mdxsnap.nvim',
+  config = function()
+    require('mdxsnap').setup()
+  end
+}
+```
 
 ## 🎯 Usage
 
-A guide to using this repository template:
+1.  **Open an MDX/Markdown file.**
+2.  **Copy the full absolute path of an image file** to your system clipboard.
+3.  In Neovim (normal mode), run:
+    ```vim
+    :PasteImage
+    ```
+4.  **The plugin will:**
+    *   Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
+    *   Add necessary import statements (if configured via `customImports`).
+    *   Insert an image reference at your cursor (formatted by `customTextFormat`).
+    *   Show a success notification.
 
-1. Click `Use this template` > `Create a new repository` in the top right corner.
-2. Clone the created repository, rename README.example.md to README.md, edit it with your preferred editor, and migrate.
+## 🔧 Configuration
 
-```bash
-mv README.example.md README.md
+Configure `mdxsnap.nvim` by calling the `setup` function. Here's an example with explanations:
 
-# For Linux users
-sed -i 's;HidemaruOwO/MyRepository;USERNAME/REPONAME;g' README.md
+```lua
+-- In your Neovim configuration (e.g., init.lua or a dedicated plugins file)
+require("mdxsnap.config").setup({
+  -- Default path for saving images.
+  -- If DefaultPastePathType is "relative", this is relative to the project root.
+  -- If "absolute", this is used as an absolute path.
+  DefaultPastePath = "mdxsnaps_data/images/posts", -- Default: "mdxsnaps_data/images/posts"
+  DefaultPastePathType = "relative",               -- Default: "relative" ("absolute" is also an option)
 
-# For macOS users
-sed -i '' 's;HidemaruOwO/MyRepository;USERNAME/REPONAME;g' README.md
+  -- Override default settings for specific projects.
+  -- Rules are evaluated in order; the first match is used.
+  ProjectOverrides = {
+    -- Example 1: Match by project directory name
+    {
+      matchType = "projectName",             -- "projectName" or "projectPath"
+      matchValue = "my-company-blog",        -- The name of the project's root directory
+      PastePath = "public/assets/blog-images", -- Custom path for this project
+      PastePathType = "relative",
+    },
+    -- Example 2: Match by project's absolute path (supports ~ and $HOME)
+    {
+      matchType = "projectPath",
+      matchValue = "~/dev/personal-website",
+      PastePath = "src/content/assets/images",
+      PastePathType = "relative",
+    },
+    -- Add more rules as needed
+  },
+
+  -- Custom import statements to ensure are present in the file.
+  -- The plugin checks if an import matching `checkRegex` exists before adding `line`.
+  customImports = {
+    {
+      line = 'import { Image } from "astro:assets";', -- The full import line
+      checkRegex = 'astro:assets',                   -- A string/regex to check for existing import
+    },
+    -- Example:
+    -- { line = 'import MyCustomImage from "@/components/MyCustomImage.astro";', checkRegex = '@/components/MyCustomImage.astro' },
+  },
+
+  -- Format for the inserted image reference text.
+  -- `%s` is a placeholder.
+  -- - If one `%s`: it's replaced by the image path.
+  -- - If two `%s`: the first is replaced by alt text (filename stem of the new image),
+  --                 and the second by the image path.
+  customTextFormat = "![%s](%s)", -- Default: Markdown image format "![alt](src)"
+  -- Example for Astro <Image /> component:
+  -- customTextFormat = '<Image src={"%s"} alt="%s" />',
+  -- Example for a simple <img> tag:
+  -- customTextFormat = '<img src="%s" alt="%s" />',
+})
 ```
 
-3. Edit credits in LICENSE and licenses/SUSHI-WARE.txt.
+**Key Configuration Options:**
 
-> [!IMPORTANT]
-> If you don't change the credit in the license file, I will usually own the rights to your software. (LoL)
+*   `DefaultPastePath` (string): Default directory for saving images. Initial default is `"mdxsnaps_data/images/posts"`.
+*   `DefaultPastePathType` (string): How `DefaultPastePath` is interpreted. Can be `"relative"` (to project root) or `"absolute"`. Initial default is `"relative"`.
+*   `ProjectOverrides` (table of tables): A list of rules to override default settings for specific projects.
+    *   `matchType` (string): `"projectName"` (matches the project root's directory name) or `"projectPath"` (matches the project root's absolute path, supports `~`, `$HOME`).
+    *   `matchValue` (string): The value to match against (e.g., "my-blog", "~/dev/project-x").
+    *   `PastePath` (string): The path to use if this rule matches.
+    *   `PastePathType` (string): The type (`"relative"` or `"absolute"`) for this rule's `PastePath`.
+*   `customImports` (table of tables): List of import statements to automatically add if not present.
+    *   `line` (string): The full import statement.
+    *   `checkRegex` (string): A string or Lua pattern to check if a similar import already exists.
+*   `customTextFormat` (string): A format string for the text inserted into the document.
+
+Remember to restart Neovim or re-source your configuration after making changes.
 
 ## 🌍 For contributer
 
