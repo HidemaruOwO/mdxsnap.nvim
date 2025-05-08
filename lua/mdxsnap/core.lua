@@ -141,44 +141,50 @@ local function copy_image_file(clipboard_path, target_dir, original_extension)
   if not clipboard_path then clipboard_path = "" end
 
   local time_str
-  local conversion_ok, conversion_err = pcall(function() time_str = vim.fn.tostring(current_time_ms) end)
+  -- Try Lua's native tostring first for current_time_ms
+  local conversion_ok, conversion_err = pcall(function() time_str = tostring(current_time_ms) end)
   if not conversion_ok then
-    vim.notify("Error converting time to string. Time was: " .. vim.inspect(current_time_ms) .. ". Error: " .. tostring(conversion_err), vim.log.levels.ERROR)
+    vim.notify("Error converting time to string (using Lua tostring). Time was: " .. vim.inspect(current_time_ms) .. ". Error: " .. tostring(conversion_err), vim.log.levels.ERROR)
     time_str = "0" -- Fallback
-  elseif not time_str then -- pcall succeeded but tostring returned nil (unlikely for vim.fn.tostring)
-    vim.notify("vim.fn.tostring returned nil for time: " .. vim.inspect(current_time_ms), vim.log.levels.ERROR)
+  elseif not time_str then
+    vim.notify("Lua tostring returned nil for time: " .. vim.inspect(current_time_ms), vim.log.levels.ERROR)
     time_str = "0" -- Fallback
   end
 
+  -- Ensure clipboard_path is a string
   if type(clipboard_path) ~= "string" then
     vim.notify("clipboard_path is not a string: " .. vim.inspect(clipboard_path) .. " (type: " .. type(clipboard_path) .. ")", vim.log.levels.WARN)
-    -- Attempt to convert, though this indicates an earlier issue
-    local cb_conversion_ok, cb_path_str_err = pcall(function() clipboard_path = vim.fn.tostring(clipboard_path) end)
+    local cb_conversion_ok, cb_path_str_err = pcall(function() clipboard_path = tostring(clipboard_path) end) -- Use Lua's tostring
     if not cb_conversion_ok then
-        vim.notify("Failed to convert clipboard_path to string: " .. tostring(cb_path_str_err), vim.log.levels.ERROR)
-        clipboard_path = "" -- Fallback to empty string if conversion fails
-    elseif clipboard_path == nil then -- vim.fn.tostring might return nil if input is weird
-        clipboard_path = ""
+        vim.notify("Failed to convert clipboard_path to string (using Lua tostring): " .. tostring(cb_path_str_err), vim.log.levels.ERROR)
+        clipboard_path = "" -- Fallback
+    elseif clipboard_path == nil then
+        vim.notify("Lua tostring returned nil for clipboard_path.", vim.log.levels.ERROR)
+        clipboard_path = "" -- Fallback
     end
   end
 
   local seed_string = time_str .. clipboard_path
-  -- For debugging, uncomment next line and :set verbose=1 (or change level to INFO)
+  -- For debugging:
   -- vim.notify("Seed string for SHA256: '" .. seed_string .. "' (type: " .. type(seed_string) .. ")", vim.log.levels.DEBUG)
 
   local hashed_string
   local hash_ok, hash_err = pcall(function() hashed_string = vim.fn.sha256(seed_string) end)
   if not hash_ok then
     vim.notify("Error during sha256 calculation. Seed was: '" .. seed_string .. "'. Error: " .. tostring(hash_err), vim.log.levels.ERROR)
-    -- Fallback to a simpler seed if sha256 fails on the original one
-    local fallback_seed = vim.fn.tostring(os.time()) .. "fallback"
+    local fallback_seed = tostring(os.time()) .. "fallback" -- Use Lua's tostring
     hashed_string = vim.fn.sha256(fallback_seed)
-  elseif not hashed_string then -- pcall succeeded but sha256 returned nil
+  elseif not hashed_string then
      vim.notify("vim.fn.sha256 returned nil for seed: '" .. seed_string .. "'", vim.log.levels.ERROR)
-     local fallback_seed = vim.fn.tostring(os.time()) .. "fallback_nil"
+     local fallback_seed = tostring(os.time()) .. "fallback_nil" -- Use Lua's tostring
      hashed_string = vim.fn.sha256(fallback_seed)
   end
 
+  -- Ensure hashed_string is not nil before strcharpart
+  if not hashed_string then
+    vim.notify("hashed_string became nil even after fallback. Using fixed random string.", vim.log.levels.ERROR)
+    hashed_string = "abcdef1234567890" -- Absolute fallback
+  end
 
   local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
   local new_filename = random_string .. original_extension
