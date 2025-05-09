@@ -7,7 +7,7 @@ A Neovim plugin to paste clipboard images into MDX files by saving and inserting
 - Paste images directly from a clipboard full path or raw data using the `:PasteImage` command.
 - Supports OS-standard clipboard tools:
   - macOS: `pbpaste` and `osascript`
-  - Linux: `wl-paste` (preferred) or `xclip` (untested)
+  - Linux: `wl-paste` or `xclip`
   - Windows: PowerShell (`Get-Clipboard`) (untested)
 - Automatically expands shell variables like `~` and `$HOME` in path configurations.
 - Flexible image saving locations:
@@ -22,18 +22,6 @@ A Neovim plugin to paste clipboard images into MDX files by saving and inserting
 - A command-line clipboard tool for your OS (see Features list).
 
 ## 🛠 Installation
-
-- Using `vim-plug`
-
-```vim
-Plug 'HidemaruOwO/mdxsnap.nvim'
-```
-
-- Using `dein`
-
-```vim
-call dein#add('HidemaruOwO/mdxsnap.nvim')
-```
 
 - Using `packer.nvim`
 
