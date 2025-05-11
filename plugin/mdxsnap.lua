@@ -1,11 +1,12 @@
 local core = require("mdxsnap.core")
 local config = require("mdxsnap.config")
 
-vim.api.nvim_create_user_command("PasteImage", function()
-	core.paste_image()
+vim.api.nvim_create_user_command("PasteImage", function(opts)
+	core.paste_image(opts.fargs[1])
 end, {
-	nargs = 0,
-	desc = "Paste image from clipboard and insert into MDX/Markdown (mdxsnap)",
+	nargs = "?", -- 0 or 1 argument
+	complete = "file", -- Basic file completion
+	desc = "Paste image from clipboard and insert into MDX/Markdown (mdxsnap) [filename]",
 })
 
 vim.defer_fn(function()

@@ -7,7 +7,7 @@ local editor_utils = require("mdxsnap.editor_utils")
 local M = {}
 
 -- Main Function
-M.paste_image = function()
+M.paste_image = function(desired_filename_stem)
   local opts = config_module.options
   local current_bufnr = vim.api.nvim_get_current_buf()
   local current_buf_path_raw = vim.api.nvim_buf_get_name(current_bufnr)
@@ -71,7 +71,7 @@ M.paste_image = function()
   end
 
   local new_image_full_path, new_filename_only, err_copy_img
-  new_image_full_path, new_filename_only, err_copy_img = fs_utils.copy_image_file(clipboard_image_path, target_image_dir, original_extension)
+  new_image_full_path, new_filename_only, err_copy_img = fs_utils.copy_image_file(clipboard_image_path, target_image_dir, original_extension, desired_filename_stem)
 
   if is_temporary_clipboard_file then
     fs_utils.cleanup_tmp_file(clipboard_image_path)
@@ -83,15 +83,16 @@ M.paste_image = function()
   end
 
   if current_filetype == "mdx" then
-    editor_utils.ensure_imports_are_present(current_bufnr, opts.customImports)
+    editor_utils.ensure_imports_are_present(current_bufnr, active_paste_config.customImports or opts.customImports)
   end
 
   local text_to_insert = editor_utils.format_image_reference_text(
     new_image_full_path,
     new_filename_only,
-    opts.customTextFormat,
+    active_paste_config.customTextFormat or opts.customTextFormat,
     active_paste_config.project_root,
-    active_paste_config.type
+    active_paste_config.type,
+    desired_filename_stem
   )
 
   local cursor_pos = vim.api.nvim_win_get_cursor(0)

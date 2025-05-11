@@ -73,27 +73,31 @@ function M.ensure_target_directory_exists(base_path, mdx_filename_no_ext)
   return image_subdir
 end
 
-function M.copy_image_file(clipboard_path, target_dir, original_extension)
+function M.copy_image_file(clipboard_path, target_dir, original_extension, desired_filename_stem)
   if not clipboard_path or clipboard_path == "" then
     return nil, nil, "Invalid clipboard path (empty or nil)"
   end
 
-  -- Generate unique filename
-  local current_time_ms = vim.loop.now() or os.time() * 1000
-  local time_str = tostring(current_time_ms)
-  
-  -- Generate hash for filename
-  local hashed_string = vim.fn.sha256(time_str .. clipboard_path)
-  if not hashed_string then
-    hashed_string = vim.fn.sha256(tostring(os.time()) .. clipboard_path)
-  end
-  if not hashed_string then
-    hashed_string = "fallback" .. tostring(os.time())
+  local new_filename
+  if desired_filename_stem and desired_filename_stem ~= "" then
+    new_filename = desired_filename_stem .. original_extension
+  else
+    -- Generate unique filename
+    local current_time_ms = vim.loop.now() or os.time() * 1000
+    local time_str = tostring(current_time_ms)
+
+    -- Generate hash for filename
+    local hashed_string = vim.fn.sha256(time_str .. clipboard_path)
+    if not hashed_string then
+      hashed_string = vim.fn.sha256(tostring(os.time()) .. clipboard_path)
+    end
+    if not hashed_string then
+      hashed_string = "fallback" .. tostring(os.time())
+    end
+    local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
+    new_filename = random_string .. original_extension
   end
 
-  -- Create destination path
-  local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
-  local new_filename = random_string .. original_extension
   local new_image_full_path = utils.normalize_slashes(target_dir .. "/" .. new_filename)
   new_image_full_path = utils.normalize_slashes(vim.fn.fnamemodify(new_image_full_path, ":p"))
 

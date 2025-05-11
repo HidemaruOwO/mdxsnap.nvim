@@ -16,6 +16,10 @@ M.options = {
     --   matchValue = "my-blog",
     --   PastePath = "public/images",
     --   PastePathType = "relative",
+    --   customImports = {
+    --     { line = 'import { SpecificImage } from "@/components/SpecificImage";', checkRegex = "SpecificImage" },
+    --   },
+    --   customTextFormat = "<SpecificImage src=\"%s\" alt=\"%s\" />",
     -- },
     -- Example: Override by project full path
     -- {
@@ -23,6 +27,7 @@ M.options = {
     --   matchValue = "~/projects/portfolio", -- Supports shell vars (~, $HOME)
     --   PastePath = "/var/www/portfolio/images",
     --   PastePathType = "absolute",
+    --   customTextFormat = "![Portfolio Image: %s](%s)",
     -- },
   },
 

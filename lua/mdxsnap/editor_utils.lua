@@ -11,6 +11,8 @@ function M.determine_active_paste_config(current_buf_path, opts)
 
   local active_path_str = opts.DefaultPastePath
   local active_type = opts.DefaultPastePathType
+  local active_custom_imports = opts.customImports
+  local active_custom_text_format = opts.customTextFormat
 
   if opts.ProjectOverrides and #opts.ProjectOverrides > 0 then
     for _, rule in ipairs(opts.ProjectOverrides) do
@@ -28,8 +30,10 @@ function M.determine_active_paste_config(current_buf_path, opts)
       end
 
       if matched then
-        active_path_str = rule.PastePath
-        active_type = rule.PastePathType
+        active_path_str = rule.PastePath or active_path_str
+        active_type = rule.PastePathType or active_type
+        active_custom_imports = rule.customImports or active_custom_imports
+        active_custom_text_format = rule.customTextFormat or active_custom_text_format
         vim.notify("Using project override: matchType=" .. rule.matchType .. ", value=" .. rule_match_value, vim.log.levels.INFO)
         break
       end
@@ -46,6 +50,8 @@ function M.determine_active_paste_config(current_buf_path, opts)
     path = expanded_active_path,
     type = active_type,
     project_root = project_root_abs_path,
+    customImports = active_custom_imports,
+    customTextFormat = active_custom_text_format,
   }
 end
 
@@ -91,7 +97,7 @@ function M.ensure_imports_are_present(bufnr, custom_imports)
   end
 end
 
-function M.format_image_reference_text(new_image_full_path, new_filename_only, custom_text_format, project_root_abs_path, active_paste_path_type)
+function M.format_image_reference_text(new_image_full_path, new_filename_only, custom_text_format, project_root_abs_path, active_paste_path_type, desired_filename_stem)
   local image_path_for_text = utils.normalize_slashes(new_image_full_path)
 
   if active_paste_path_type == "relative" and project_root_abs_path then
@@ -101,13 +107,13 @@ function M.format_image_reference_text(new_image_full_path, new_filename_only, c
       if rel_path ~= "" and rel_path:sub(1,1) ~= "/" then
         rel_path = "/" .. rel_path
       elseif rel_path == "" then
-        rel_path = "/" .. new_filename_only 
+        rel_path = "/" .. new_filename_only
         if image_path_for_text:sub(#normalized_project_root + 1) ~= new_filename_only then
             local original_sub_path = image_path_for_text:sub(#normalized_project_root + 1)
             if original_sub_path ~= "" and original_sub_path:sub(1,1) ~= "/" then
                 rel_path = "/" .. original_sub_path
             elseif original_sub_path == "" then
-                 rel_path = "/" 
+                 rel_path = "/"
             else
                 rel_path = original_sub_path
             end
@@ -117,7 +123,12 @@ function M.format_image_reference_text(new_image_full_path, new_filename_only, c
     end
   end
 
-  local alt_text = utils.extract_filename_stem(new_filename_only)
+  local alt_text
+  if desired_filename_stem and desired_filename_stem ~= "" then
+    alt_text = desired_filename_stem
+  else
+    alt_text = utils.extract_filename_stem(new_filename_only)
+  end
   local text_to_insert
   local s_count = 0
   for _ in string.gmatch(custom_text_format, "%%s") do s_count = s_count + 1 end
