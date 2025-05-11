@@ -82,7 +82,9 @@ M.paste_image = function()
     return
   end
 
-  editor_utils.ensure_imports_are_present(current_bufnr, opts.customImports)
+  if current_filetype == "mdx" then
+    editor_utils.ensure_imports_are_present(current_bufnr, opts.customImports)
+  end
 
   local text_to_insert = editor_utils.format_image_reference_text(
     new_image_full_path,
