@@ -55,6 +55,10 @@ use {
     ```vim
     :PasteImage
     ```
+    - With file name
+    ```vim
+    :PasteImage [filename]
+    ```
 4.  The plugin will:
     - Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
     - Add necessary import statements (if configured via `customImports`).
@@ -73,6 +77,28 @@ require("mdxsnap.config").setup({
   -- If "absolute", this is used as an absolute path.
   DefaultPastePath = "mdxsnaps_data/images/posts", -- Default: "mdxsnaps_data/images/posts"
   DefaultPastePathType = "relative",               -- Default: "relative" ("absolute" is also an option)
+
+  -- Global custom import statements to ensure are present in the file (can be overridden by ProjectOverrides).
+  -- The plugin checks if an import matching `checkRegex` exists before adding `line`.
+  customImports = {
+    {
+      line = 'import { Image } from "astro:assets";', -- The full import line
+      checkRegex = 'astro:assets',                   -- A string/regex to check for existing import
+    },
+    -- Example:
+    -- { line = 'import MyCustomImage from "@/components/MyCustomImage.astro";', checkRegex = '@/components/MyCustomImage.astro' },
+  },
+
+  -- Global format for the inserted image reference text (can be overridden by ProjectOverrides).
+  -- `%s` is a placeholder.
+  -- - If one `%s`: it's replaced by the image path.
+  -- - If two `%s`: the first is replaced by alt text (filename stem of the new image, or the name provided to :PasteImage),
+  --                 and the second by the image path.
+  customTextFormat = "![%s](%s)", -- Default: Markdown image format "![alt](src)"
+  -- Example for Astro <Image /> component:
+  -- customTextFormat = '<Image alt="%s" src={"%s"} />',
+  -- Example for a simple <img> tag:
+  -- customTextFormat = '<img alt="%s" src="%s" />',
 
   -- Override default settings for specific projects.
   -- Rules are evaluated in order; the first match is used.
@@ -98,28 +124,6 @@ require("mdxsnap.config").setup({
     },
     -- Add more rules as needed
   },
-
-  -- Global custom import statements to ensure are present in the file (can be overridden by ProjectOverrides).
-  -- The plugin checks if an import matching `checkRegex` exists before adding `line`.
-  customImports = {
-    {
-      line = 'import { Image } from "astro:assets";', -- The full import line
-      checkRegex = 'astro:assets',                   -- A string/regex to check for existing import
-    },
-    -- Example:
-    -- { line = 'import MyCustomImage from "@/components/MyCustomImage.astro";', checkRegex = '@/components/MyCustomImage.astro' },
-  },
-
-  -- Global format for the inserted image reference text (can be overridden by ProjectOverrides).
-  -- `%s` is a placeholder.
-  -- - If one `%s`: it's replaced by the image path.
-  -- - If two `%s`: the first is replaced by alt text (filename stem of the new image, or the name provided to :PasteImage),
-  --                 and the second by the image path.
-  customTextFormat = "![%s](%s)", -- Default: Markdown image format "![alt](src)"
-  -- Example for Astro <Image /> component:
-  -- customTextFormat = '<Image alt="%s" src={"%s"} />',
-  -- Example for a simple <img> tag:
-  -- customTextFormat = '<img alt="%s" src="%s" />',
 })
 ```
 
