@@ -74,70 +74,78 @@ function M.ensure_target_directory_exists(base_path, mdx_filename_no_ext)
 end
 
 function M.copy_image_file(clipboard_path, target_dir, original_extension)
-  local current_time_ms = vim.loop.now()
-  if not current_time_ms then current_time_ms = 0 end
-  if not clipboard_path then clipboard_path = "" end
-
-  local time_str
-  local conversion_ok, conversion_err = pcall(function() time_str = tostring(current_time_ms) end)
-  if not conversion_ok then
-    vim.notify("Error converting time to string (using Lua tostring). Time was: " .. vim.inspect(current_time_ms) .. ". Error: " .. tostring(conversion_err), vim.log.levels.ERROR)
-    time_str = "0"
-  elseif not time_str then
-    vim.notify("Lua tostring returned nil for time: " .. vim.inspect(current_time_ms), vim.log.levels.ERROR)
-    time_str = "0"
+  if not clipboard_path or clipboard_path == "" then
+    return nil, nil, "Invalid clipboard path (empty or nil)"
   end
 
-  if type(clipboard_path) ~= "string" then
-    vim.notify("clipboard_path is not a string: " .. vim.inspect(clipboard_path) .. " (type: " .. type(clipboard_path) .. ")", vim.log.levels.WARN)
-    local cb_conversion_ok, cb_path_str_err = pcall(function() clipboard_path = tostring(clipboard_path) end)
-    if not cb_conversion_ok then
-        vim.notify("Failed to convert clipboard_path to string (using Lua tostring): " .. tostring(cb_path_str_err), vim.log.levels.ERROR)
-        clipboard_path = ""
-    elseif clipboard_path == nil then
-        vim.notify("Lua tostring returned nil for clipboard_path.", vim.log.levels.ERROR)
-        clipboard_path = ""
-    end
-  end
-
-  local seed_string = time_str .. clipboard_path
-
-  local hashed_string
-  local hash_ok, hash_err = pcall(function() hashed_string = vim.fn.sha256(seed_string) end)
-  if not hash_ok then
-    vim.notify("Error during sha256 calculation. Seed was: '" .. seed_string .. "'. Error: " .. tostring(hash_err), vim.log.levels.ERROR)
-    local fallback_seed = tostring(os.time()) .. "fallback"
-    hashed_string = vim.fn.sha256(fallback_seed)
-  elseif not hashed_string then
-     vim.notify("vim.fn.sha256 returned nil for seed: '" .. seed_string .. "'", vim.log.levels.ERROR)
-     local fallback_seed = tostring(os.time()) .. "fallback_nil"
-     hashed_string = vim.fn.sha256(fallback_seed)
-  end
-
+  -- Generate unique filename
+  local current_time_ms = vim.loop.now() or os.time() * 1000
+  local time_str = tostring(current_time_ms)
+  
+  -- Generate hash for filename
+  local hashed_string = vim.fn.sha256(time_str .. clipboard_path)
   if not hashed_string then
-    vim.notify("hashed_string became nil even after fallback. Using fixed random string.", vim.log.levels.ERROR)
-    hashed_string = "abcdef1234567890"
+    hashed_string = vim.fn.sha256(tostring(os.time()) .. clipboard_path)
+  end
+  if not hashed_string then
+    hashed_string = "fallback" .. tostring(os.time())
   end
 
+  -- Create destination path
   local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
   local new_filename = random_string .. original_extension
   local new_image_full_path = utils.normalize_slashes(target_dir .. "/" .. new_filename)
   new_image_full_path = utils.normalize_slashes(vim.fn.fnamemodify(new_image_full_path, ":p"))
 
-  local copy_cmd
-  local os_type_copy = utils.get_os_type()
-  if os_type_copy == "mac" or os_type_copy == "linux" then
-    copy_cmd = string.format("cp '%s' '%s'", clipboard_path, new_image_full_path)
-  elseif os_type_copy == "windows" then
-    copy_cmd = string.format("copy \"%s\" \"%s\"", clipboard_path:gsub("/", "\\"), new_image_full_path:gsub("/", "\\"))
-  else
-    return nil, nil, "Unsupported OS for file copy."
+  -- Copy file using Lua I/O
+  local source_file, err_source = io.open(clipboard_path, "rb")
+  if not source_file then
+    return nil, nil, "Failed to open source file: " .. tostring(err_source)
   end
 
-  vim.fn.system(copy_cmd)
-  if vim.v.shell_error ~= 0 then
-    return nil, nil, "Failed to copy image. Cmd: " .. copy_cmd .. " Err: " .. vim.v.shell_error
+  local dest_file, err_dest = io.open(new_image_full_path, "wb")
+  if not dest_file then
+    source_file:close()
+    return nil, nil, "Failed to create destination file: " .. tostring(err_dest)
   end
+
+  local success = true
+  local error_msg
+  local chunk_size = 8192 -- 8KB chunks for efficient copying
+
+  while true do
+    local chunk = source_file:read(chunk_size)
+    if not chunk then break end -- EOF
+
+    local ok = dest_file:write(chunk)
+    if not ok then
+      success = false
+      error_msg = "Failed to write chunk to destination file"
+      break
+    end
+  end
+
+  -- Clean up
+  source_file:close()
+  dest_file:flush() -- Ensure all data is written
+  dest_file:close()
+
+  -- Handle errors
+  if not success then
+    pcall(vim.fn.delete, new_image_full_path) -- Try to clean up failed copy
+    return nil, nil, error_msg
+  end
+
+  -- Verify copy was successful
+  if vim.fn.filereadable(new_image_full_path) ~= 1 then
+    return nil, nil, "Copied file is not readable: " .. new_image_full_path
+  end
+
+  if vim.fn.getfsize(new_image_full_path) <= 0 then
+    pcall(vim.fn.delete, new_image_full_path)
+    return nil, nil, "Copied file is empty"
+  end
+
   return new_image_full_path, new_filename
 end
 

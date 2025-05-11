@@ -6,58 +6,77 @@ local function fetch_image_path_from_clipboard_macos()
   local tmp_dir = fs_utils.get_tmp_dir()
   if not tmp_dir then return nil, "Could not get/create mdxsnap temp directory.", false end
 
-  local timestamp = tostring(vim.loop.now()) -- Use Lua's tostring
-  local tmp_tiff_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
+  local timestamp = tostring(vim.loop.now())
   local tmp_png_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".png")
 
-  local osascript_cmd = string.format(
-    "osascript -e 'tell app \"System Events\" to write (the clipboard as «class TIFF») to (open for access POSIX file \"%s\" with write permission)'",
-    tmp_tiff_path
-  )
+  -- Try direct PNG save first
+  local png_script = string.format([[
+    try
+      set png_data to (the clipboard as «class PNGf»)
+      set png_file to open for access POSIX file "%s" with write permission
+      write png_data to png_file
+      close access png_file
+      return "success"
+    on error err_msg number err_num
+      try
+        close access png_file
+      end try
+      return "error:" & err_msg & ":" & err_num
+    end try
+  ]], tmp_png_path)
 
-  local system_ok, system_result_or_err = pcall(vim.fn.system, osascript_cmd)
-  local osascript_output = ""
-  if system_ok then
-    osascript_output = system_result_or_err
-  else
-    fs_utils.cleanup_tmp_file(tmp_tiff_path)
-    return nil, "Error executing osascript command: " .. tostring(system_result_or_err), false
+  local system_ok, system_result = pcall(vim.fn.system, "osascript -e '" .. png_script .. "'")
+  if system_ok and vim.v.shell_error == 0 and not system_result:match("^error:") then
+    -- Verify the PNG file
+    if vim.fn.filereadable(tmp_png_path) == 1 and vim.fn.getfsize(tmp_png_path) > 0 then
+      return tmp_png_path, true, nil
+    end
+    fs_utils.cleanup_tmp_file(tmp_png_path)
   end
 
-  if vim.v.shell_error ~= 0 then
+  -- Fallback to TIFF conversion if PNG direct save failed
+  local tmp_tiff_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
+  local tiff_script = string.format([[
+    try
+      set tiff_data to (the clipboard as «class TIFF»)
+      set tiff_file to open for access POSIX file "%s" with write permission
+      write tiff_data to tiff_file
+      close access tiff_file
+      return "success"
+    on error err_msg number err_num
+      try
+        close access tiff_file
+      end try
+      return "error:" & err_msg & ":" & err_num
+    end try
+  ]], tmp_tiff_path)
+
+  system_ok, system_result = pcall(vim.fn.system, "osascript -e '" .. tiff_script .. "'")
+  if not system_ok or vim.v.shell_error ~= 0 or system_result:match("^error:") then
     fs_utils.cleanup_tmp_file(tmp_tiff_path)
-    return nil, "Failed to save clipboard image as TIFF using osascript. Shell error: " .. vim.v.shell_error .. ". Output: " .. osascript_output, false
+    return nil, "Failed to save clipboard image as TIFF (fallback). Error: " .. tostring(system_result), false
   end
 
   if vim.fn.filereadable(tmp_tiff_path) == 0 then
-    return nil, "osascript ran, but TIFF file was not created (clipboard might not contain image data): " .. tmp_tiff_path, false
+    return nil, "TIFF file was not created (clipboard might not contain image data)", false
   end
 
-  local sips_cmd = string.format(
-    "sips -s format png \"%s\" --out \"%s\"",
-    tmp_tiff_path, tmp_png_path
-  )
-  system_ok, system_result_or_err = pcall(vim.fn.system, sips_cmd)
-  local sips_output = ""
-  if system_ok then
-    sips_output = system_result_or_err
-  else
-    fs_utils.cleanup_tmp_file(tmp_tiff_path)
+  -- Convert TIFF to PNG using sips
+  local sips_cmd = string.format("sips -s format png \"%s\" --out \"%s\"", tmp_tiff_path, tmp_png_path)
+  system_ok, system_result = pcall(vim.fn.system, sips_cmd)
+  fs_utils.cleanup_tmp_file(tmp_tiff_path) -- Clean up TIFF regardless of conversion result
+
+  if not system_ok or vim.v.shell_error ~= 0 then
     fs_utils.cleanup_tmp_file(tmp_png_path)
-    return nil, "Error executing sips command: " .. tostring(system_result_or_err), false
+    return nil, "Failed to convert TIFF to PNG. Error: " .. tostring(system_result), false
   end
-  fs_utils.cleanup_tmp_file(tmp_tiff_path)
 
-  if vim.v.shell_error ~= 0 then
+  if vim.fn.filereadable(tmp_png_path) == 0 or vim.fn.getfsize(tmp_png_path) == 0 then
     fs_utils.cleanup_tmp_file(tmp_png_path)
-    return nil, "Failed to convert TIFF to PNG using sips. Shell error: " .. vim.v.shell_error .. ". Output: " .. sips_output, false
+    return nil, "PNG file was not created or is empty after conversion", false
   end
 
-  if vim.fn.filereadable(tmp_png_path) == 0 then
-    return nil, "sips ran, but PNG file was not created: " .. tmp_png_path, false
-  end
-
-  return tmp_png_path, true, nil -- path, is_temporary, error_message (nil on success)
+  return tmp_png_path, true, nil
 end
 
 function M.fetch_image_path_from_clipboard()
