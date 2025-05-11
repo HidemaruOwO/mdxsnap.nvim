@@ -86,7 +86,7 @@ require("mdxsnap.config").setup({
       customImports = { -- Override global customImports for this project
         { line = 'import { BlogImage } from "@/components/BlogImage.astro";', checkRegex = "@/components/BlogImage.astro" },
       },
-      customTextFormat = '<BlogImage src="%s" alt="%s" />', -- Override global customTextFormat
+      customTextFormat = '<BlogImage alt="%s" src="%s" />', -- Override global customTextFormat
     },
     -- Example 2: Match by project's absolute path (supports ~ and $HOME)
     {
@@ -117,9 +117,9 @@ require("mdxsnap.config").setup({
   --                 and the second by the image path.
   customTextFormat = "![%s](%s)", -- Default: Markdown image format "![alt](src)"
   -- Example for Astro <Image /> component:
-  -- customTextFormat = '<Image src={"%s"} alt="%s" />',
+  -- customTextFormat = '<Image alt="%s" src={"%s"} />',
   -- Example for a simple <img> tag:
-  -- customTextFormat = '<img src="%s" alt="%s" />',
+  -- customTextFormat = '<img alt="%s" src="%s" />',
 })
 ```
 
