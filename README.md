@@ -4,7 +4,9 @@ A Neovim plugin to paste clipboard images into MDX files by saving and inserting
 
 ## 🚀 Features
 
-- Paste images directly from a clipboard full path or raw data using the `:PasteImage` command.
+- Paste images directly from a clipboard full path or raw data using the `:PasteImage [filename]` command.
+  - If `filename` is provided, it's used as the image's filename (stem) and alt text.
+  - If omitted, a random filename is generated.
 - Supports OS-standard clipboard tools:
   - macOS: `pbpaste` and `osascript`
   - Linux: `wl-paste` or `xclip`
@@ -12,7 +14,7 @@ A Neovim plugin to paste clipboard images into MDX files by saving and inserting
 - Automatically expands shell variables like `~` and `$HOME` in path configurations.
 - Flexible image saving locations:
   - Default path settings (`DefaultPastePath`, `DefaultPastePathType`).
-  - Project-specific overrides (`ProjectOverrides`) based on project name or full path.
+  - Project-specific overrides (`ProjectOverrides`) based on project name or full path, which can also override `customImports` and `customTextFormat`.
 - Automatic insertion of custom import statements (`customImports`).
 - Customizable image reference text format (`customTextFormat`).
 
@@ -78,9 +80,13 @@ require("mdxsnap.config").setup({
     -- Example 1: Match by project directory name
     {
       matchType = "projectName",             -- "projectName" or "projectPath"
-      matchValue = "my-company-blog",        -- The name of the project's root directory
-      PastePath = "public/assets/blog-images", -- Custom path for this project
+      matchValue = "my-astro-blog",        -- The name of the project's root directory
+      PastePath = "src/assets/blog-images", -- Custom path for this project
       PastePathType = "relative",
+      customImports = { -- Override global customImports for this project
+        { line = 'import { BlogImage } from "@/components/BlogImage.astro";', checkRegex = "@/components/BlogImage.astro" },
+      },
+      customTextFormat = '<BlogImage src="%s" alt="%s" />', -- Override global customTextFormat
     },
     -- Example 2: Match by project's absolute path (supports ~ and $HOME)
     {
@@ -88,11 +94,12 @@ require("mdxsnap.config").setup({
       matchValue = "~/dev/personal-website",
       PastePath = "src/content/assets/images",
       PastePathType = "relative",
+      customTextFormat = "![%s](%s 'My personal site image')", -- Add a title to markdown images
     },
     -- Add more rules as needed
   },
 
-  -- Custom import statements to ensure are present in the file.
+  -- Global custom import statements to ensure are present in the file (can be overridden by ProjectOverrides).
   -- The plugin checks if an import matching `checkRegex` exists before adding `line`.
   customImports = {
     {
@@ -103,10 +110,10 @@ require("mdxsnap.config").setup({
     -- { line = 'import MyCustomImage from "@/components/MyCustomImage.astro";', checkRegex = '@/components/MyCustomImage.astro' },
   },
 
-  -- Format for the inserted image reference text.
+  -- Global format for the inserted image reference text (can be overridden by ProjectOverrides).
   -- `%s` is a placeholder.
   -- - If one `%s`: it's replaced by the image path.
-  -- - If two `%s`: the first is replaced by alt text (filename stem of the new image),
+  -- - If two `%s`: the first is replaced by alt text (filename stem of the new image, or the name provided to :PasteImage),
   --                 and the second by the image path.
   customTextFormat = "![%s](%s)", -- Default: Markdown image format "![alt](src)"
   -- Example for Astro <Image /> component:
@@ -125,10 +132,12 @@ require("mdxsnap.config").setup({
   - `matchValue` (string): The value to match against (e.g., "my-blog", "~/dev/project-x").
   - `PastePath` (string): The path to use if this rule matches.
   - `PastePathType` (string): The type (`"relative"` or `"absolute"`) for this rule's `PastePath`.
-- `customImports` (table of tables): List of import statements to automatically add if not present.
+  - `customImports` (optional, table of tables): Overrides the global `customImports` for this project.
+  - `customTextFormat` (optional, string): Overrides the global `customTextFormat` for this project.
+- `customImports` (table of tables): Global list of import statements to automatically add if not present. Can be overridden by `ProjectOverrides`.
   - `line` (string): The full import statement.
   - `checkRegex` (string): A string or Lua pattern to check if a similar import already exists.
-- `customTextFormat` (string): A format string for the text inserted into the document.
+- `customTextFormat` (string): Global format string for the text inserted into the document. Can be overridden by `ProjectOverrides`.
 
 Remember to restart Neovim or re-source your configuration after making changes.
 
