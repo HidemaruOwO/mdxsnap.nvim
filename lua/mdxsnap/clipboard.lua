@@ -299,45 +299,89 @@ function M.fetch_image_path_from_clipboard()
       end
     end
   elseif os_type == "windows" then
-    local cmd_win = "powershell -command \"Get-Clipboard -Format Text -Raw\""
-    local handle_win = io.popen(cmd_win)
-    if not handle_win then return nil, false, "Windows: Failed to execute PowerShell Get-Clipboard." end
-    local result_win = handle_win:read("*a")
-    local close_success, _, close_code = handle_win:close()
-    result_win = result_win:gsub("[\r\n]", "")
-
-    if result_win == "" then
-        local err_detail_win = "Windows: PowerShell Get-Clipboard returned no text (clipboard might be empty)"
-        if not close_success or (close_code and close_code ~= 0) then
-            err_detail_win = err_detail_win .. " or PowerShell command failed [code: " .. tostring(close_code) .. "]"
-        end
-        return nil, false, err_detail_win .. "."
+    -- Attempt to get image directly using PowerShell
+    local ps_script = [[
+Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
+$image = [System.Windows.Forms.Clipboard]::GetImage()
+if ($image -ne $null) {
+    $timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
+    $tempDir = [System.IO.Path]::GetTempPath()
+    $fileName = "mdxsnap_clip_" + $timestamp + ".png"
+    $filePath = [System.IO.Path]::Combine($tempDir, $fileName)
+    try {
+        $image.Save($filePath, [System.Drawing.Imaging.ImageFormat]::Png)
+        Write-Output $filePath
+    } catch {
+        Write-Output "ErrorSavingImage"
+    }
+} else {
+    Write-Output "NoImage"
+}
+]]
+    local cmd_get_image_win = "powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive -Command \"" .. ps_script:gsub("\"", "\\\"") .. "\""
+    
+    local image_path_handle = io.popen(cmd_get_image_win)
+    local image_path_result = ""
+    if image_path_handle then
+      image_path_result = image_path_handle:read("*a")
+      image_path_handle:close()
+      image_path_result = image_path_result:gsub("[\r\n]", "")
+    else
+      vim.notify("Windows: Failed to execute PowerShell for image extraction (io.popen failed).", vim.log.levels.WARN)
     end
 
-    local final_path_candidate_win = result_win
-    if final_path_candidate_win:match("^file:///") then
-        final_path_candidate_win = final_path_candidate_win:sub(9)
-        final_path_candidate_win = utils.url_decode(final_path_candidate_win)
-        if not final_path_candidate_win then
-            return nil, false, "Windows: Failed to URL decode file URI from clipboard."
+    if image_path_result ~= "" and image_path_result ~= "NoImage" and image_path_result ~= "ErrorSavingImage" then
+      if vim.fn.filereadable(image_path_result) == 1 then
+        return image_path_result, true, nil -- path, is_temporary, error_message
+      else
+        vim.notify("Windows: PowerShell reported image saved to '" .. image_path_result .. "', but file is not readable.", vim.log.levels.WARN)
+      end
+    elseif image_path_result == "ErrorSavingImage" then
+        vim.notify("Windows: PowerShell script encountered an error while saving the image.", vim.log.levels.WARN)
+    end
+    -- If image extraction failed or no image, fall back to text-based clipboard
+    vim.notify("Windows: No image found in clipboard via PowerShell or error occurred, trying text.", vim.log.levels.INFO)
+
+    local cmd_win_text = "powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive -Command \"Get-Clipboard -Format Text -Raw\""
+    local handle_win_text = io.popen(cmd_win_text)
+    if not handle_win_text then return nil, false, "Windows: Failed to execute PowerShell Get-Clipboard (text fallback)." end
+    local result_win_text = handle_win_text:read("*a")
+    local close_success_text, _, close_code_text = handle_win_text:close()
+    result_win_text = result_win_text:gsub("[\r\n]", "")
+
+    if result_win_text == "" then
+        local err_detail_win_text = "Windows: PowerShell Get-Clipboard (text fallback) returned no text (clipboard might be empty)"
+        if not close_success_text or (close_code_text and close_code_text ~= 0) then
+            err_detail_win_text = err_detail_win_text .. " or PowerShell command failed [code: " .. tostring(close_code_text) .. "]"
         end
-    elseif final_path_candidate_win:match("^file://") then
-         final_path_candidate_win = final_path_candidate_win:sub(8)
-         final_path_candidate_win = utils.url_decode(final_path_candidate_win)
-         if not final_path_candidate_win then
-            return nil, false, "Windows: Failed to URL decode file URI from clipboard."
+        return nil, false, err_detail_win_text .. "."
+    end
+
+    local final_path_candidate_win_text = result_win_text
+    if final_path_candidate_win_text:match("^file:///") then
+        final_path_candidate_win_text = final_path_candidate_win_text:sub(9)
+        final_path_candidate_win_text = utils.url_decode(final_path_candidate_win_text)
+        if not final_path_candidate_win_text then
+            return nil, false, "Windows: Failed to URL decode file URI from clipboard (text fallback)."
+        end
+    elseif final_path_candidate_win_text:match("^file://") then
+         final_path_candidate_win_text = final_path_candidate_win_text:sub(8)
+         final_path_candidate_win_text = utils.url_decode(final_path_candidate_win_text)
+         if not final_path_candidate_win_text then
+            return nil, false, "Windows: Failed to URL decode file URI from clipboard (text fallback)."
         end
     end
 
-    local expanded_path_win, err_expand_win = utils.expand_shell_vars_in_path(final_path_candidate_win)
-    if not expanded_path_win then
-        return nil, false, "Windows: Failed to expand clipboard text path: " .. (err_expand_win or "unknown error")
+    local expanded_path_win_text, err_expand_win_text = utils.expand_shell_vars_in_path(final_path_candidate_win_text)
+    if not expanded_path_win_text then
+        return nil, false, "Windows: Failed to expand clipboard text path (text fallback): " .. (err_expand_win_text or "unknown error")
     end
     
-    if vim.fn.filereadable(expanded_path_win) == 1 then
-        return expanded_path_win, false, nil
+    if vim.fn.filereadable(expanded_path_win_text) == 1 then
+        return expanded_path_win_text, false, nil
     else
-        return nil, false, "Windows: Clipboard text (path candidate) '" .. expanded_path_win .. "' is not a readable file."
+        return nil, false, "Windows: Clipboard text (path candidate, fallback) '" .. expanded_path_win_text .. "' is not a readable file."
     end
   else
     return nil, false, "Unsupported OS for clipboard access."
