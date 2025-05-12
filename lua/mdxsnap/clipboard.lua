@@ -3,13 +3,69 @@ local fs_utils = require("mdxsnap.fs_utils")
 local M = {}
 
 local function fetch_image_path_from_clipboard_macos()
+  -- Attempt 1: Use pbpaste to get a potential file path
+  local cmd_pbpaste_check = "pbpaste"
+  local handle_pbpaste_check = io.popen(cmd_pbpaste_check)
+  if handle_pbpaste_check then
+    local result_pbpaste_check = handle_pbpaste_check:read("*a")
+    handle_pbpaste_check:close()
+    result_pbpaste_check = result_pbpaste_check:gsub("[\r\n]", "")
+
+    if result_pbpaste_check ~= "" then
+      local expanded_path_pb_check, _ = utils.expand_shell_vars_in_path(result_pbpaste_check)
+      if expanded_path_pb_check then
+        if vim.fn.filereadable(expanded_path_pb_check) == 1 then
+          local ext_match_pb = expanded_path_pb_check:match("%.([^%./\\]+)$")
+          if ext_match_pb and ({png = true, jpg = true, jpeg = true, gif = true, webp = true, tiff = true})[ext_match_pb:lower()] then
+            return expanded_path_pb_check, false, nil -- path, is_temporary=false, error_message
+          end
+        else
+          -- If pbpaste result is just a filename (no slashes) and not readable (likely not in cwd),
+          -- try to get full path using AppleScript for 'file URL' or 'fss'.
+          if not expanded_path_pb_check:match("/") then
+            local get_furl_script = [[
+              try
+                  return POSIX path of (the clipboard as «class furl»)
+              on error err_msg_furl number err_num_furl
+                  try
+                      return POSIX path of (the clipboard as "public.file-url")
+                  on error err_msg_public number err_num_public
+                      try
+                          set clipboard_text to (the clipboard as text)
+                          if clipboard_text starts with "/" then
+                              return clipboard_text
+                          else
+                              return "error:furl_public_text_failed:" & err_num_furl & ":" & err_msg_furl & ";" & err_num_public & ":" & err_msg_public
+                          end if
+                      on error err_msg_text number err_num_text
+                          return "error:all_attempts_failed:" & err_num_furl & ":" & err_msg_furl & ";" & err_num_public & ":" & err_msg_public & ";" & err_num_text & ":" & err_msg_text
+                      end try
+                  end try
+              end try
+            ]]
+            local as_ok, as_furl_result = pcall(vim.fn.system, "osascript -e '" .. get_furl_script:gsub("'", "'\\''") .. "'")
+            if as_ok and vim.v.shell_error == 0 and as_furl_result and not as_furl_result:match("^error:") then
+              local full_path_from_as = as_furl_result:gsub("[\r\n]", "")
+              if vim.fn.filereadable(full_path_from_as) == 1 then
+                local ext_match_as = full_path_from_as:match("%.([^%./\\]+)$")
+                if ext_match_as and ({png = true, jpg = true, jpeg = true, gif = true, webp = true, tiff = true})[ext_match_as:lower()] then
+                  return full_path_from_as, false, nil
+                end
+              end
+            end
+          end
+        end
+      end
+    end
+  end
+
+  -- Attempt 2: AppleScript to get raw image data (PNG then TIFF)
   local tmp_dir = fs_utils.get_tmp_dir()
   if not tmp_dir then return nil, "Could not get/create mdxsnap temp directory.", false end
 
   local timestamp = tostring(vim.loop.now())
   local tmp_png_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".png")
 
-  -- Try direct PNG save first
   local png_script = string.format([[
     try
       set png_data to (the clipboard as «class PNGf»)
@@ -27,14 +83,12 @@ local function fetch_image_path_from_clipboard_macos()
 
   local system_ok, system_result = pcall(vim.fn.system, "osascript -e '" .. png_script .. "'")
   if system_ok and vim.v.shell_error == 0 and not system_result:match("^error:") then
-    -- Verify the PNG file
     if vim.fn.filereadable(tmp_png_path) == 1 and vim.fn.getfsize(tmp_png_path) > 0 then
       return tmp_png_path, true, nil
     end
     fs_utils.cleanup_tmp_file(tmp_png_path)
   end
 
-  -- Fallback to TIFF conversion if PNG direct save failed
   local tmp_tiff_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
   local tiff_script = string.format([[
     try
@@ -61,10 +115,9 @@ local function fetch_image_path_from_clipboard_macos()
     return nil, "TIFF file was not created (clipboard might not contain image data)", false
   end
 
-  -- Convert TIFF to PNG using sips
   local sips_cmd = string.format("sips -s format png \"%s\" --out \"%s\"", tmp_tiff_path, tmp_png_path)
   system_ok, system_result = pcall(vim.fn.system, sips_cmd)
-  fs_utils.cleanup_tmp_file(tmp_tiff_path) -- Clean up TIFF regardless of conversion result
+  fs_utils.cleanup_tmp_file(tmp_tiff_path)
 
   if not system_ok or vim.v.shell_error ~= 0 then
     fs_utils.cleanup_tmp_file(tmp_png_path)
@@ -88,25 +141,9 @@ function M.fetch_image_path_from_clipboard()
     if raw_image_path then
       return raw_image_path, is_temp, err_macos
     else
-      vim.notify("macOS: Failed to get raw image from clipboard (" .. (err_macos or "unknown reason") .. "), falling back to pbpaste (text path).", vim.log.levels.INFO)
-      local cmd_pbpaste = "pbpaste"
-      local handle_pbpaste = io.popen(cmd_pbpaste)
-      if not handle_pbpaste then return nil, false, "macOS: Failed to execute pbpaste." end
-      local result_pbpaste = handle_pbpaste:read("*a")
-      handle_pbpaste:close()
-      result_pbpaste = result_pbpaste:gsub("[\r\n]", "")
-      if result_pbpaste == "" then return nil, false, "macOS: Clipboard (pbpaste) is empty or does not contain text." end
-      
-      local expanded_path_pb, err_expand_pb = utils.expand_shell_vars_in_path(result_pbpaste)
-      if not expanded_path_pb then
-        return nil, false, "macOS: Failed to expand path from pbpaste: " .. (err_expand_pb or "unknown")
-      end
-      
-      if vim.fn.filereadable(expanded_path_pb) == 1 then
-        return expanded_path_pb, false, nil
-      else
-        return nil, false, "macOS: Path from pbpaste is not a readable file: " .. expanded_path_pb
-      end
+      -- If all attempts within fetch_image_path_from_clipboard_macos failed
+      vim.notify("macOS: All attempts to get image/path from clipboard failed. Last error: " .. (err_macos or "unknown reason"), vim.log.levels.WARN)
+      return nil, false, "macOS: Failed to get image or path from clipboard. " .. (err_macos or "")
     end
   elseif os_type == "linux" then
     local is_wayland = vim.env.WAYLAND_DISPLAY ~= nil
