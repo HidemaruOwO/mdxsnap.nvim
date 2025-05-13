@@ -16,9 +16,13 @@ M.paste_image = function(desired_filename_stem)
   local current_buf_path, err_exp_buf = utils.expand_shell_vars_in_path(current_buf_path_raw)
   if not current_buf_path then vim.notify("Error expanding buffer path: " .. (err_exp_buf or "unknown"), vim.log.levels.ERROR); return end
 
-  local current_filetype = vim.bo[current_bufnr].filetype
-  if current_filetype ~= "mdx" and current_filetype ~= "markdown" then
-    vim.notify("Command only for MDX/Markdown files.", vim.log.levels.WARN); return
+  local current_filetype_raw = vim.bo[current_bufnr].filetype
+  local current_filetype = string.lower(string.gsub(current_filetype_raw, "^%s*(.-)%s*$", "%1")) -- Trim and lowercase
+  local current_buf_filename = vim.api.nvim_buf_get_name(current_bufnr)
+  local current_file_extension = string.lower(vim.fn.fnamemodify(current_buf_filename, ":e"))
+
+  if not (current_filetype == "mdx" or current_filetype == "markdown" or current_file_extension == "mdx" or current_file_extension == "md") then
+    vim.notify("Command only for MDX/Markdown files. Detected filetype: '" .. current_filetype_raw .. "' (processed as: '" .. current_filetype .. "'), Extension: '" .. current_file_extension .. "'", vim.log.levels.WARN); return
   end
   local mdx_filename_no_ext = vim.fn.fnamemodify(current_buf_path, ":t:r")
 
@@ -82,7 +86,7 @@ M.paste_image = function(desired_filename_stem)
     return
   end
 
-  if current_filetype == "mdx" then
+  if current_filetype == "mdx" or current_file_extension == "mdx" then
     editor_utils.ensure_imports_are_present(current_bufnr, active_paste_config.customImports or opts.customImports)
   end
 
