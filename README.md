@@ -71,7 +71,7 @@ Configure `mdxsnap.nvim` by calling the `setup` function. Here's an example with
 
 ```lua
 -- In your Neovim configuration (e.g., init.lua or a dedicated plugins file)
-require("mdxsnap.config").setup({
+require("mdxsnap").setup({
   -- Default path for saving images.
   -- If DefaultPastePathType is "relative", this is relative to the project root.
   -- If "absolute", this is used as an absolute path.
