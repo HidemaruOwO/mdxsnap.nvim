@@ -55,4 +55,12 @@ M.setup = function(user_options)
   M.options = vim.tbl_deep_extend("force", M.options, user_options or {})
 end
 
+-- Backwards compatibility: Allow setup to be called directly on config module
+-- This allows both require("mdxsnap").setup() and require("mdxsnap.config").setup()
+setmetatable(M, {
+  __call = function(_, user_options)
+    M.setup(user_options)
+  end
+})
+
 return M
