@@ -1,6 +1,20 @@
 # mdxsnap.nvim 📸
 
-A Neovim plugin to paste clipboard images into MDX files by saving and inserting image links automatically.
+A Neovim plugin to paste clipboard images into markdown and MDX files by saving and inserting image links automatically.
+
+<details open>
+<summary>Snapping markdown file</summary>
+
+<img src="docs/snap_markdown.gif" alt="Snapping markdown file" width="600"/>
+
+</details>
+
+<details open>
+<summary>Snapping mdx file</summary>
+
+<img src="docs/snap_mdx.gif" alt="Snapping mdx file" width="600"/>
+
+</details>
 
 ## 🚀 Features
 
