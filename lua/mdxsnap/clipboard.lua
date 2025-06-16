@@ -2,60 +2,71 @@ local utils = require("mdxsnap.utils")
 local fs_utils = require("mdxsnap.fs_utils")
 local M = {}
 
+-- Helper function to check if file extension is a supported image format
+local function is_supported_image_extension(file_path)
+  if not file_path then return false end
+  local ext_match = file_path:match("%.([^%./\\]+)$")
+  return ext_match and ({png = true, jpg = true, jpeg = true, gif = true, webp = true, tiff = true})[ext_match:lower()]
+end
+
+-- Helper function to validate and check if path is a readable image file
+local function validate_image_path(file_path)
+  if not file_path then return nil end
+  if vim.fn.filereadable(file_path) == 1 and is_supported_image_extension(file_path) then
+    return file_path
+  end
+  return nil
+end
+
+-- Helper function to get file path using AppleScript file URL methods
+local function get_file_path_via_applescript()
+  local script_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/scripts/applescript/get_file_url_from_clipboard.applescript"
+  
+  local as_ok, as_furl_result = pcall(vim.fn.system, "osascript '" .. script_path .. "'")
+  if as_ok and vim.v.shell_error == 0 and as_furl_result and not as_furl_result:match("^error:") then
+    return as_furl_result:gsub("[\r\n]", "")
+  end
+  return nil
+end
+
+-- Helper function to process pbpaste result and attempt various methods
+local function process_pbpaste_result(pbpaste_result)
+  if not pbpaste_result or pbpaste_result == "" then return nil end
+  
+  local expanded_path, _ = utils.expand_shell_vars_in_path(pbpaste_result)
+  if not expanded_path then return nil end
+  
+  -- Try direct file path validation first
+  local validated_path = validate_image_path(expanded_path)
+  if validated_path then
+    return validated_path
+  end
+  
+  -- If pbpaste result is just a filename (no slashes) and not readable,
+  -- try to get full path using AppleScript
+  if not expanded_path:match("/") then
+    local applescript_path = get_file_path_via_applescript()
+    if applescript_path then
+      return validate_image_path(applescript_path)
+    end
+  end
+  
+  return nil
+end
+
 local function fetch_image_path_from_clipboard_macos()
   -- Attempt 1: Use pbpaste to get a potential file path
   local cmd_pbpaste_check = "pbpaste"
   local handle_pbpaste_check = io.popen(cmd_pbpaste_check)
+  
   if handle_pbpaste_check then
     local result_pbpaste_check = handle_pbpaste_check:read("*a")
     handle_pbpaste_check:close()
     result_pbpaste_check = result_pbpaste_check:gsub("[\r\n]", "")
-
-    if result_pbpaste_check ~= "" then
-      local expanded_path_pb_check, _ = utils.expand_shell_vars_in_path(result_pbpaste_check)
-      if expanded_path_pb_check then
-        if vim.fn.filereadable(expanded_path_pb_check) == 1 then
-          local ext_match_pb = expanded_path_pb_check:match("%.([^%./\\]+)$")
-          if ext_match_pb and ({png = true, jpg = true, jpeg = true, gif = true, webp = true, tiff = true})[ext_match_pb:lower()] then
-            return expanded_path_pb_check, false, nil -- path, is_temporary=false, error_message
-          end
-        else
-          -- If pbpaste result is just a filename (no slashes) and not readable (likely not in cwd),
-          -- try to get full path using AppleScript for 'file URL' or 'fss'.
-          if not expanded_path_pb_check:match("/") then
-            local get_furl_script = [[
-              try
-                  return POSIX path of (the clipboard as «class furl»)
-              on error err_msg_furl number err_num_furl
-                  try
-                      return POSIX path of (the clipboard as "public.file-url")
-                  on error err_msg_public number err_num_public
-                      try
-                          set clipboard_text to (the clipboard as text)
-                          if clipboard_text starts with "/" then
-                              return clipboard_text
-                          else
-                              return "error:furl_public_text_failed:" & err_num_furl & ":" & err_msg_furl & ";" & err_num_public & ":" & err_msg_public
-                          end if
-                      on error err_msg_text number err_num_text
-                          return "error:all_attempts_failed:" & err_num_furl & ":" & err_msg_furl & ";" & err_num_public & ":" & err_msg_public & ";" & err_num_text & ":" & err_msg_text
-                      end try
-                  end try
-              end try
-            ]]
-            local as_ok, as_furl_result = pcall(vim.fn.system, "osascript -e '" .. get_furl_script:gsub("'", "'\\''") .. "'")
-            if as_ok and vim.v.shell_error == 0 and as_furl_result and not as_furl_result:match("^error:") then
-              local full_path_from_as = as_furl_result:gsub("[\r\n]", "")
-              if vim.fn.filereadable(full_path_from_as) == 1 then
-                local ext_match_as = full_path_from_as:match("%.([^%./\\]+)$")
-                if ext_match_as and ({png = true, jpg = true, jpeg = true, gif = true, webp = true, tiff = true})[ext_match_as:lower()] then
-                  return full_path_from_as, false, nil
-                end
-              end
-            end
-          end
-        end
-      end
+    
+    local image_path = process_pbpaste_result(result_pbpaste_check)
+    if image_path then
+      return image_path, false, nil -- path, is_temporary=false, error_message
     end
   end
 
@@ -66,22 +77,9 @@ local function fetch_image_path_from_clipboard_macos()
   local timestamp = tostring(vim.loop.now())
   local tmp_png_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".png")
 
-  local png_script = string.format([[
-    try
-      set png_data to (the clipboard as «class PNGf»)
-      set png_file to open for access POSIX file "%s" with write permission
-      write png_data to png_file
-      close access png_file
-      return "success"
-    on error err_msg number err_num
-      try
-        close access png_file
-      end try
-      return "error:" & err_msg & ":" & err_num
-    end try
-  ]], tmp_png_path)
-
-  local system_ok, system_result = pcall(vim.fn.system, "osascript -e '" .. png_script .. "'")
+  local script_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/scripts/applescript/save_png_from_clipboard.applescript"
+  
+  local system_ok, system_result = pcall(vim.fn.system, "osascript '" .. script_path .. "' '" .. tmp_png_path .. "'")
   if system_ok and vim.v.shell_error == 0 and not system_result:match("^error:") then
     if vim.fn.filereadable(tmp_png_path) == 1 and vim.fn.getfsize(tmp_png_path) > 0 then
       return tmp_png_path, true, nil
@@ -90,22 +88,9 @@ local function fetch_image_path_from_clipboard_macos()
   end
 
   local tmp_tiff_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
-  local tiff_script = string.format([[
-    try
-      set tiff_data to (the clipboard as «class TIFF»)
-      set tiff_file to open for access POSIX file "%s" with write permission
-      write tiff_data to tiff_file
-      close access tiff_file
-      return "success"
-    on error err_msg number err_num
-      try
-        close access tiff_file
-      end try
-      return "error:" & err_msg & ":" & err_num
-    end try
-  ]], tmp_tiff_path)
-
-  system_ok, system_result = pcall(vim.fn.system, "osascript -e '" .. tiff_script .. "'")
+  local tiff_script_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/scripts/applescript/save_tiff_from_clipboard.applescript"
+  
+  system_ok, system_result = pcall(vim.fn.system, "osascript '" .. tiff_script_path .. "' '" .. tmp_tiff_path .. "'")
   if not system_ok or vim.v.shell_error ~= 0 or system_result:match("^error:") then
     fs_utils.cleanup_tmp_file(tmp_tiff_path)
     return nil, "Failed to save clipboard image as TIFF (fallback). Error: " .. tostring(system_result), false
@@ -356,26 +341,8 @@ function M.fetch_image_path_from_clipboard()
     end
   elseif os_type == "windows" then
     -- Attempt to get image directly using PowerShell
-    local ps_script = [[
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-$image = [System.Windows.Forms.Clipboard]::GetImage()
-if ($image -ne $null) {
-    $timestamp = Get-Date -Format "yyyyMMddHHmmssfff"
-    $tempDir = [System.IO.Path]::GetTempPath()
-    $fileName = "mdxsnap_clip_" + $timestamp + ".png"
-    $filePath = [System.IO.Path]::Combine($tempDir, $fileName)
-    try {
-        $image.Save($filePath, [System.Drawing.Imaging.ImageFormat]::Png)
-        Write-Output $filePath
-    } catch {
-        Write-Output "ErrorSavingImage"
-    }
-} else {
-    Write-Output "NoImage"
-}
-]]
-    local cmd_get_image_win = "powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive -Command \"" .. ps_script:gsub("\"", "\\\"") .. "\""
+    local ps_script_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h") .. "/scripts/powershell/save_clipboard_image_as_png.ps1"
+    local cmd_get_image_win = "powershell -ExecutionPolicy Bypass -NoProfile -NonInteractive -File \"" .. ps_script_path .. "\""
     
     local image_path_handle = io.popen(cmd_get_image_win)
     local image_path_result = ""
