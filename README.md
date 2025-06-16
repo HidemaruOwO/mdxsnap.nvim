@@ -60,7 +60,7 @@ use {
     :PasteImage [filename]
     ```
 4.  The plugin will:
-    - Copy the image to the configured directory (e.g., `project_root/mdxsnaps_data/images/posts/your_doc_name/random_img.png`).
+    - Copy the image to the configured directory (e.g., `project_root/snaps/images/posts/your_doc_name/random_img.png`).
     - Add necessary import statements (if configured via `customImports`).
     - Insert an image reference at your cursor (formatted by `customTextFormat`).
     - Show a success notification.
@@ -75,7 +75,7 @@ require("mdxsnap").setup({
   -- Default path for saving images.
   -- If DefaultPastePathType is "relative", this is relative to the project root.
   -- If "absolute", this is used as an absolute path.
-  DefaultPastePath = "mdxsnaps_data/images/posts", -- Default: "mdxsnaps_data/images/posts"
+  DefaultPastePath = "snaps/images/posts", -- Default: "snaps/images/posts"
   DefaultPastePathType = "relative",               -- Default: "relative" ("absolute" is also an option)
 
   -- Global custom import statements to ensure are present in the file (can be overridden by ProjectOverrides).
@@ -129,7 +129,7 @@ require("mdxsnap").setup({
 
 **Key Configuration Options:**
 
-- `DefaultPastePath` (string): Default directory for saving images. Initial default is `"mdxsnaps_data/images/posts"`.
+- `DefaultPastePath` (string): Default directory for saving images. Initial default is `"snaps/images/posts"`.
 - `DefaultPastePathType` (string): How `DefaultPastePath` is interpreted. Can be `"relative"` (to project root) or `"absolute"`. Initial default is `"relative"`.
 - `ProjectOverrides` (table of tables): A list of rules to override default settings for specific projects.
   - `matchType` (string): `"projectName"` (matches the project root's directory name) or `"projectPath"` (matches the project root's absolute path, supports `~`, `$HOME`).
