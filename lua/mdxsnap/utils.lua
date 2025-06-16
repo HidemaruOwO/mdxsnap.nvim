@@ -6,13 +6,13 @@ function M.normalize_slashes(path)
   return path:gsub("[/\\]+", "/")
 end
 
-function M.url_decode(str)
-  if not str then return nil end
-  str = str:gsub("+", " ") -- '+' to space first
-  str = str:gsub("%%(%x%x)", function(hex)
+function M.url_decode(url_str)
+  if not url_str then return nil end
+  url_str = url_str:gsub("+", " ") -- '+' to space first
+  url_str = url_str:gsub("%%(%x%x)", function(hex)
     return string.char(tonumber(hex, 16))
   end)
-  return str
+  return url_str
 end
 
 function M.get_os_type()
@@ -37,10 +37,10 @@ function M.expand_shell_vars_in_path(path_str)
   return vim.fn.expand(path_str)
 end
 
-function M.extract_filename_stem(filepath)
-  if not filepath then return "" end
-  local basename = filepath:match("([^/\\]+)%..*$") or filepath:match("([^/\\]+)$")
-  return basename or ""
+function M.extract_filename_stem(file_path)
+  if not file_path then return "" end
+  local stem = file_path:match("([^/\\]+)%..*$") or file_path:match("([^/\\]+)$")
+  return stem or ""
 end
 
 return M

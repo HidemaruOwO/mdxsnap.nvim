@@ -9,100 +9,100 @@ local M = {}
 -- Main Function
 M.paste_image = function(desired_filename_stem)
   local opts = config_module.options
-  local current_bufnr = vim.api.nvim_get_current_buf()
-  local current_buf_path_raw = vim.api.nvim_buf_get_name(current_bufnr)
+  local buf_nr = vim.api.nvim_get_current_buf()
+  local buf_path_raw = vim.api.nvim_buf_get_name(buf_nr)
 
-  if current_buf_path_raw == "" then vim.notify("Current buffer has no name.", vim.log.levels.ERROR); return end
-  local current_buf_path, err_exp_buf = utils.expand_shell_vars_in_path(current_buf_path_raw)
-  if not current_buf_path then vim.notify("Error expanding buffer path: " .. (err_exp_buf or "unknown"), vim.log.levels.ERROR); return end
+  if buf_path_raw == "" then vim.notify("Current buffer has no name.", vim.log.levels.ERROR); return end
+  local buf_path, expand_err = utils.expand_shell_vars_in_path(buf_path_raw)
+  if not buf_path then vim.notify("Error expanding buffer path: " .. (expand_err or "unknown"), vim.log.levels.ERROR); return end
 
-  local current_filetype_raw = vim.bo[current_bufnr].filetype
-  local current_filetype = string.lower(string.gsub(current_filetype_raw, "^%s*(.-)%s*$", "%1")) -- Trim and lowercase
-  local current_buf_filename = vim.api.nvim_buf_get_name(current_bufnr)
-  local current_file_extension = string.lower(vim.fn.fnamemodify(current_buf_filename, ":e"))
+  local filetype_raw = vim.bo[buf_nr].filetype
+  local filetype = string.lower(string.gsub(filetype_raw, "^%s*(.-)%s*$", "%1")) -- Trim and lowercase
+  local buf_filename = vim.api.nvim_buf_get_name(buf_nr)
+  local file_ext = string.lower(vim.fn.fnamemodify(buf_filename, ":e"))
 
-  if not (current_filetype == "mdx" or current_filetype == "markdown" or current_file_extension == "mdx" or current_file_extension == "md") then
-    vim.notify("Command only for MDX/Markdown files. Detected filetype: '" .. current_filetype_raw .. "' (processed as: '" .. current_filetype .. "'), Extension: '" .. current_file_extension .. "'", vim.log.levels.WARN); return
+  if not (filetype == "mdx" or filetype == "markdown" or file_ext == "mdx" or file_ext == "md") then
+    vim.notify("Command only for MDX/Markdown files. Detected filetype: '" .. filetype_raw .. "' (processed as: '" .. filetype .. "'), Extension: '" .. file_ext .. "'", vim.log.levels.WARN); return
   end
-  local mdx_filename_no_ext = vim.fn.fnamemodify(current_buf_path, ":t:r")
+  local filename_stem = vim.fn.fnamemodify(buf_path, ":t:r")
 
-  local clipboard_image_path, is_temporary_clipboard_file, err_cb
-  clipboard_image_path, is_temporary_clipboard_file, err_cb = clipboard.fetch_image_path_from_clipboard()
+  local image_path, is_temp, clip_err
+  image_path, is_temp, clip_err = clipboard.fetch_image_path_from_clipboard()
 
-  if not clipboard_image_path then
-    vim.notify(err_cb or "Failed to get image/path from clipboard.", vim.log.levels.ERROR)
+  if not image_path then
+    vim.notify(clip_err or "Failed to get image/path from clipboard.", vim.log.levels.ERROR)
     return
   end
 
-  if vim.fn.filereadable(clipboard_image_path) == 0 then
-    vim.notify("Obtained clipboard image path is not a readable file: " .. clipboard_image_path, vim.log.levels.ERROR)
-    if is_temporary_clipboard_file then fs_utils.cleanup_tmp_file(clipboard_image_path) end
+  if vim.fn.filereadable(image_path) == 0 then
+    vim.notify("Obtained clipboard image path is not a readable file: " .. image_path, vim.log.levels.ERROR)
+    if is_temp then fs_utils.cleanup_tmp_file(image_path) end
     return
   end
 
-  local original_extension
-  if is_temporary_clipboard_file then
-    original_extension = ".png" -- Assuming temp files from clipboard (macos tiff->png, linux mime) are png
+  local ext
+  if is_temp then
+    ext = ".png" -- Assuming temp files from clipboard (macos tiff->png, linux mime) are png
   else
-    local ext_match = clipboard_image_path:match("%.([^%./\\]+)$")
+    local ext_match = image_path:match("%.([^%./\\]+)$")
     if not ext_match then
-      vim.notify("Cannot determine image extension from path: " .. clipboard_image_path, vim.log.levels.ERROR)
-      if is_temporary_clipboard_file then fs_utils.cleanup_tmp_file(clipboard_image_path) end
+      vim.notify("Cannot determine image extension from path: " .. image_path, vim.log.levels.ERROR)
+      if is_temp then fs_utils.cleanup_tmp_file(image_path) end
       return
     end
-    original_extension = "." .. ext_match:lower()
+    ext = "." .. ext_match:lower()
   end
 
-  local active_paste_config, err_active_conf = editor_utils.determine_active_paste_config(current_buf_path, opts)
-  if not active_paste_config then
-    vim.notify(err_active_conf or "Failed to get active paste configuration.", vim.log.levels.ERROR)
-    if is_temporary_clipboard_file then fs_utils.cleanup_tmp_file(clipboard_image_path) end
+  local paste_config, config_err = editor_utils.determine_active_paste_config(buf_path, opts)
+  if not paste_config then
+    vim.notify(config_err or "Failed to get active paste configuration.", vim.log.levels.ERROR)
+    if is_temp then fs_utils.cleanup_tmp_file(image_path) end
     return
   end
 
-  local resolved_paste_base, err_resolve_base = fs_utils.build_final_paste_base_path(active_paste_config)
-  if not resolved_paste_base then
-    vim.notify(err_resolve_base, vim.log.levels.ERROR)
-    if is_temporary_clipboard_file then fs_utils.cleanup_tmp_file(clipboard_image_path) end
+  local base_path, base_err = fs_utils.build_final_paste_base_path(paste_config)
+  if not base_path then
+    vim.notify(base_err, vim.log.levels.ERROR)
+    if is_temp then fs_utils.cleanup_tmp_file(image_path) end
     return
   end
 
-  local target_image_dir, err_mkdir_target = fs_utils.ensure_target_directory_exists(resolved_paste_base, mdx_filename_no_ext)
-  if not target_image_dir then
-    vim.notify(err_mkdir_target, vim.log.levels.ERROR)
-    if is_temporary_clipboard_file then fs_utils.cleanup_tmp_file(clipboard_image_path) end
+  local target_dir, dir_err = fs_utils.ensure_target_directory_exists(base_path, filename_stem)
+  if not target_dir then
+    vim.notify(dir_err, vim.log.levels.ERROR)
+    if is_temp then fs_utils.cleanup_tmp_file(image_path) end
     return
   end
 
-  local new_image_full_path, new_filename_only, err_copy_img
-  new_image_full_path, new_filename_only, err_copy_img = fs_utils.copy_image_file(clipboard_image_path, target_image_dir, original_extension, desired_filename_stem)
+  local new_path, new_filename, copy_err
+  new_path, new_filename, copy_err = fs_utils.copy_image_file(image_path, target_dir, ext, desired_filename_stem)
 
-  if is_temporary_clipboard_file then
-    fs_utils.cleanup_tmp_file(clipboard_image_path)
+  if is_temp then
+    fs_utils.cleanup_tmp_file(image_path)
   end
 
-  if not new_image_full_path then
-    vim.notify(err_copy_img or "Failed to copy image to final destination.", vim.log.levels.ERROR)
+  if not new_path then
+    vim.notify(copy_err or "Failed to copy image to final destination.", vim.log.levels.ERROR)
     return
   end
 
-  if current_filetype == "mdx" or current_file_extension == "mdx" then
-    editor_utils.ensure_imports_are_present(current_bufnr, active_paste_config.customImports or opts.customImports)
+  if filetype == "mdx" or file_ext == "mdx" then
+    editor_utils.ensure_imports_are_present(buf_nr, paste_config.customImports or opts.customImports)
   end
 
   local text_to_insert = editor_utils.format_image_reference_text(
-    new_image_full_path,
-    new_filename_only,
-    active_paste_config.customTextFormat or opts.customTextFormat,
-    active_paste_config.project_root,
-    active_paste_config.type,
+    new_path,
+    new_filename,
+    paste_config.customTextFormat or opts.customTextFormat,
+    paste_config.project_root,
+    paste_config.type,
     desired_filename_stem
   )
 
   local cursor_pos = vim.api.nvim_win_get_cursor(0)
-  vim.api.nvim_buf_set_lines(current_bufnr, cursor_pos[1] - 1, cursor_pos[1] - 1, false, { text_to_insert })
+  vim.api.nvim_buf_set_lines(buf_nr, cursor_pos[1] - 1, cursor_pos[1] - 1, false, { text_to_insert })
 
-  vim.notify("Image pasted: " .. new_image_full_path, vim.log.levels.INFO)
+  vim.notify("Image pasted: " .. new_path, vim.log.levels.INFO)
 end
 
 return M

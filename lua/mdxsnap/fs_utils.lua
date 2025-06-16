@@ -12,9 +12,9 @@ function M.find_project_root_path(start_path)
         return current_path
       end
     end
-    local parent = vim.fn.fnamemodify(current_path, ":h")
-    if parent == current_path then break end
-    current_path = parent
+    local parent_path = vim.fn.fnamemodify(current_path, ":h")
+    if parent_path == current_path then break end
+    current_path = parent_path
   end
   return utils.expand_shell_vars_in_path(vim.fn.getcwd())
 end
@@ -32,125 +32,125 @@ function M.get_tmp_dir()
   return tmp_dir
 end
 
-function M.cleanup_tmp_file(filepath)
-  if filepath and vim.fn.filereadable(filepath) == 1 then
-    local ok, err = pcall(vim.fn.delete, filepath)
-    if not ok then
-      vim.notify("Failed to clean up temp file: " .. filepath .. " Error: " .. tostring(err), vim.log.levels.WARN)
+function M.cleanup_tmp_file(file_path)
+  if file_path and vim.fn.filereadable(file_path) == 1 then
+    local is_ok, err = pcall(vim.fn.delete, file_path)
+    if not is_ok then
+      vim.notify("Failed to clean up temp file: " .. file_path .. " Error: " .. tostring(err), vim.log.levels.WARN)
     end
   end
 end
 
 function M.build_final_paste_base_path(paste_config)
-  local active_paste_path = paste_config.path
-  local active_paste_path_type = paste_config.type
-  local project_root_abs_path = paste_config.project_root
-  local resolved_base
+  local paste_path = paste_config.path
+  local path_type = paste_config.type
+  local project_root = paste_config.project_root
+  local resolved_path
 
-  if active_paste_path_type == "relative" then
-    if not project_root_abs_path then return nil, "Cannot resolve relative path: project root not found." end
-    local clean_active_path = active_paste_path:gsub("^[/\\]+", "")
-    resolved_base = project_root_abs_path .. "/" .. clean_active_path
-  elseif active_paste_path_type == "absolute" then
-    resolved_base = active_paste_path
+  if path_type == "relative" then
+    if not project_root then return nil, "Cannot resolve relative path: project root not found." end
+    local clean_path = paste_path:gsub("^[/\\]+", "")
+    resolved_path = project_root .. "/" .. clean_path
+  elseif path_type == "absolute" then
+    resolved_path = paste_path
   else
-    return nil, "Invalid PastePathType: " .. tostring(active_paste_path_type)
+    return nil, "Invalid PastePathType: " .. tostring(path_type)
   end
 
-  if not resolved_base or resolved_base == "" then return nil, "Resolved PastePath is empty." end
-  return utils.normalize_slashes(vim.fn.fnamemodify(resolved_base, ":p"))
+  if not resolved_path or resolved_path == "" then return nil, "Resolved PastePath is empty." end
+  return utils.normalize_slashes(vim.fn.fnamemodify(resolved_path, ":p"))
 end
 
-function M.ensure_target_directory_exists(base_path, mdx_filename_no_ext)
-  local clean_mdx_filename = mdx_filename_no_ext:gsub("^[/\\]+", "")
-  local image_subdir = utils.normalize_slashes(base_path .. "/" .. clean_mdx_filename)
-  if vim.fn.isdirectory(image_subdir) == 0 then
-    vim.fn.mkdir(image_subdir, "p")
-    if vim.fn.isdirectory(image_subdir) == 0 then
-      return nil, "Failed to create directory: " .. image_subdir
+function M.ensure_target_directory_exists(base_path, filename_stem)
+  local clean_filename = filename_stem:gsub("^[/\\]+", "")
+  local target_dir = utils.normalize_slashes(base_path .. "/" .. clean_filename)
+  if vim.fn.isdirectory(target_dir) == 0 then
+    vim.fn.mkdir(target_dir, "p")
+    if vim.fn.isdirectory(target_dir) == 0 then
+      return nil, "Failed to create directory: " .. target_dir
     end
   end
-  return image_subdir
+  return target_dir
 end
 
-function M.copy_image_file(clipboard_path, target_dir, original_extension, desired_filename_stem)
-  if not clipboard_path or clipboard_path == "" then
-    return nil, nil, "Invalid clipboard path (empty or nil)"
+function M.copy_image_file(source_path, target_dir, file_ext, desired_stem)
+  if not source_path or source_path == "" then
+    return nil, nil, "Invalid source path (empty or nil)"
   end
 
-  local new_filename
-  if desired_filename_stem and desired_filename_stem ~= "" then
-    new_filename = desired_filename_stem .. original_extension
+  local filename
+  if desired_stem and desired_stem ~= "" then
+    filename = desired_stem .. file_ext
   else
     -- Generate unique filename
-    local current_time_ms = vim.loop.now() or os.time() * 1000
-    local time_str = tostring(current_time_ms)
+    local time_ms = vim.loop.now() or os.time() * 1000
+    local time_str = tostring(time_ms)
 
     -- Generate hash for filename
-    local hashed_string = vim.fn.sha256(time_str .. clipboard_path)
-    if not hashed_string then
-      hashed_string = vim.fn.sha256(tostring(os.time()) .. clipboard_path)
+    local hash = vim.fn.sha256(time_str .. source_path)
+    if not hash then
+      hash = vim.fn.sha256(tostring(os.time()) .. source_path)
     end
-    if not hashed_string then
-      hashed_string = "fallback" .. tostring(os.time())
+    if not hash then
+      hash = "fallback" .. tostring(os.time())
     end
-    local random_string = vim.fn.strcharpart(hashed_string, 0, 8)
-    new_filename = random_string .. original_extension
+    local random_str = vim.fn.strcharpart(hash, 0, 8)
+    filename = random_str .. file_ext
   end
 
-  local new_image_full_path = utils.normalize_slashes(target_dir .. "/" .. new_filename)
-  new_image_full_path = utils.normalize_slashes(vim.fn.fnamemodify(new_image_full_path, ":p"))
+  local full_path = utils.normalize_slashes(target_dir .. "/" .. filename)
+  full_path = utils.normalize_slashes(vim.fn.fnamemodify(full_path, ":p"))
 
   -- Copy file using Lua I/O
-  local source_file, err_source = io.open(clipboard_path, "rb")
-  if not source_file then
-    return nil, nil, "Failed to open source file: " .. tostring(err_source)
+  local src_file, src_err = io.open(source_path, "rb")
+  if not src_file then
+    return nil, nil, "Failed to open source file: " .. tostring(src_err)
   end
 
-  local dest_file, err_dest = io.open(new_image_full_path, "wb")
-  if not dest_file then
-    source_file:close()
-    return nil, nil, "Failed to create destination file: " .. tostring(err_dest)
+  local dst_file, dst_err = io.open(full_path, "wb")
+  if not dst_file then
+    src_file:close()
+    return nil, nil, "Failed to create destination file: " .. tostring(dst_err)
   end
 
-  local success = true
+  local is_success = true
   local error_msg
   local chunk_size = 8192 -- 8KB chunks for efficient copying
 
   while true do
-    local chunk = source_file:read(chunk_size)
+    local chunk = src_file:read(chunk_size)
     if not chunk then break end -- EOF
 
-    local ok = dest_file:write(chunk)
-    if not ok then
-      success = false
+    local is_ok = dst_file:write(chunk)
+    if not is_ok then
+      is_success = false
       error_msg = "Failed to write chunk to destination file"
       break
     end
   end
 
   -- Clean up
-  source_file:close()
-  dest_file:flush() -- Ensure all data is written
-  dest_file:close()
+  src_file:close()
+  dst_file:flush() -- Ensure all data is written
+  dst_file:close()
 
   -- Handle errors
-  if not success then
-    pcall(vim.fn.delete, new_image_full_path) -- Try to clean up failed copy
+  if not is_success then
+    pcall(vim.fn.delete, full_path) -- Try to clean up failed copy
     return nil, nil, error_msg
   end
 
   -- Verify copy was successful
-  if vim.fn.filereadable(new_image_full_path) ~= 1 then
-    return nil, nil, "Copied file is not readable: " .. new_image_full_path
+  if vim.fn.filereadable(full_path) ~= 1 then
+    return nil, nil, "Copied file is not readable: " .. full_path
   end
 
-  if vim.fn.getfsize(new_image_full_path) <= 0 then
-    pcall(vim.fn.delete, new_image_full_path)
+  if vim.fn.getfsize(full_path) <= 0 then
+    pcall(vim.fn.delete, full_path)
     return nil, nil, "Copied file is empty"
   end
 
-  return new_image_full_path, new_filename
+  return full_path, filename
 end
 
 return M
