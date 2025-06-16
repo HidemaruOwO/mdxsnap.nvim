@@ -4,7 +4,7 @@ M.options = {
   -- Base directory for saving images
   -- When PastePathType is "relative", this is relative to project root
   -- When PastePathType is "absolute", this is used as-is
-  DefaultPastePath = "mdxsnaps_data/images/posts",
+  DefaultPastePath = "snaps/images/posts",
   DefaultPastePathType = "relative", -- "relative" or "absolute"
 
   -- Override default settings for specific projects
