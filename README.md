@@ -159,6 +159,41 @@ require("mdxsnap").setup({
 
 Remember to restart Neovim or re-source your configuration after making changes.
 
+### Project override examples
+
+#### Zenn CLI Configuration
+
+For [Zenn CLI](https://www.npmjs.com/package/zenn-cli) projects:
+
+```lua
+{
+    matchType = "projectName",
+    matchValue = "zenn-articles", -- Replace with your actual repository name
+    PastePath = "images",
+    PastePathType = "relative",
+},
+```
+
+This automatically saves images to the `images` directory when working on your Zenn articles.
+
+- Directory structure
+
+```
+.
+├── articles
+│   └── introduce-mdxsnapnvim.md
+├── books
+├── images
+│   └── introduce-mdxsnapnvim
+│       ├── github.png
+│       ├── neovim.png
+│       ├── running-command.png
+│       └── zenn-setting.png
+├── README.md
+├── bun.lock
+└── package.json
+```
+
 ## 🌍 For contributer
 
 By contributing to this project, you agree to the following terms:
