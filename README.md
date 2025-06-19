@@ -133,7 +133,7 @@ require("mdxsnap").setup({
       matchType = "projectPath",
       matchValue = "~/dev/personal-website",
       PastePath = "src/content/assets/images",
-      PastePathType = "relative",
+      PastePathType = "absolute",
       customTextFormat = "![%s](%s 'My personal site image')", -- Add a title to markdown images
     },
     -- Add more rules as needed
