@@ -39,6 +39,27 @@ local function process_pbpaste_result(pbpaste_result)
   return nil
 end
 
+local function save_clipboard_image(target_path_base)
+  local script_path = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h:h") .. "/scripts/applescript/save_image_from_clipboard.applescript"
+  local is_ok, result = pcall(vim.fn.system, "osascript '" .. script_path .. "' '" .. target_path_base .. "'")
+
+  if not is_ok or vim.v.shell_error ~= 0 then
+    return nil, "osascript execution failed: " .. tostring(result)
+  end
+
+  local trimmed = (result or ""):gsub("[\r\n]", "")
+  if trimmed == "" then
+    return nil, "AppleScript returned empty result"
+  end
+
+  if trimmed:match("^error") then
+    return nil, "AppleScript reported error: " .. trimmed
+  end
+
+  return utils.normalize_slashes(trimmed), nil
+
+end
+
 function M.fetch_image_path_from_clipboard_macos()
   -- Attempt 1: Use pbpaste to get a potential file path
   local paste_cmd = "pbpaste"
@@ -55,51 +76,24 @@ function M.fetch_image_path_from_clipboard_macos()
     end
   end
 
-  -- Attempt 2: AppleScript to get raw image data (PNG then TIFF)
+  -- Attempt 2: AppleScript (ObjC bridge) to get raw image data and save as PNG
   local tmp_dir = fs_utils.get_tmp_dir()
   if not tmp_dir then return nil, "Could not get/create mdxsnap temp directory.", false end
 
   local timestamp = tostring(vim.loop.now())
-  local png_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".png")
+  local target_base = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp)
 
-  local png_script = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h:h") .. "/scripts/applescript/save_png_from_clipboard.applescript"
-  
-  local is_ok, result = pcall(vim.fn.system, "osascript '" .. png_script .. "' '" .. png_path .. "'")
-  if is_ok and vim.v.shell_error == 0 and not result:match("^error:") then
-    if vim.fn.filereadable(png_path) == 1 and vim.fn.getfsize(png_path) > 0 then
-      return png_path, true, nil
-    end
-    fs_utils.cleanup_tmp_file(png_path)
+  local saved_path, save_err = save_clipboard_image(target_base)
+  if not saved_path then
+    return nil, save_err or "Failed to save clipboard image via AppleScript.", false
   end
 
-  local tiff_path = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp .. ".tiff")
-  local tiff_script = vim.fn.fnamemodify(debug.getinfo(1, "S").source:sub(2), ":p:h:h:h:h") .. "/scripts/applescript/save_tiff_from_clipboard.applescript"
-  
-  is_ok, result = pcall(vim.fn.system, "osascript '" .. tiff_script .. "' '" .. tiff_path .. "'")
-  if not is_ok or vim.v.shell_error ~= 0 or result:match("^error:") then
-    fs_utils.cleanup_tmp_file(tiff_path)
-    return nil, "Failed to save clipboard image as TIFF (fallback). Error: " .. tostring(result), false
+  if vim.fn.filereadable(saved_path) == 0 or vim.fn.getfsize(saved_path) == 0 then
+    fs_utils.cleanup_tmp_file(saved_path)
+    return nil, "Image file was not created or is empty after AppleScript save", false
   end
 
-  if vim.fn.filereadable(tiff_path) == 0 then
-    return nil, "TIFF file was not created (clipboard might not contain image data)", false
-  end
-
-  local sips_cmd = string.format("sips -s format png \"%s\" --out \"%s\"", tiff_path, png_path)
-  is_ok, result = pcall(vim.fn.system, sips_cmd)
-  fs_utils.cleanup_tmp_file(tiff_path)
-
-  if not is_ok or vim.v.shell_error ~= 0 then
-    fs_utils.cleanup_tmp_file(png_path)
-    return nil, "Failed to convert TIFF to PNG. Error: " .. tostring(result), false
-  end
-
-  if vim.fn.filereadable(png_path) == 0 or vim.fn.getfsize(png_path) == 0 then
-    fs_utils.cleanup_tmp_file(png_path)
-    return nil, "PNG file was not created or is empty after conversion", false
-  end
-
-  return png_path, true, nil
+  return saved_path, true, nil
 end
 
 return M

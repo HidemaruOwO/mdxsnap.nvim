@@ -63,11 +63,7 @@ local function resolve_clipboard_image()
   return image_path, is_temp, nil
 end
 
-local function determine_extension(image_path, is_temp)
-  if is_temp then
-    return ".png" -- temp files from clipboard are normalized to PNG
-  end
-
+local function determine_extension(image_path)
   local ext_match = image_path:match("%.([^%./\\]+)$")
   if not ext_match then
     return nil, "Cannot determine image extension from path: " .. image_path
@@ -110,7 +106,7 @@ M.paste_image = function(desired_filename_stem)
     return
   end
 
-  local ext, ext_err = determine_extension(image_path, is_temp)
+  local ext, ext_err = determine_extension(image_path)
   if not ext then
     vim.notify(ext_err, vim.log.levels.ERROR)
     cleanup_temp_image(image_path, is_temp)
