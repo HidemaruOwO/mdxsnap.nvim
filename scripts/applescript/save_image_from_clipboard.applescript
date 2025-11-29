@@ -10,24 +10,47 @@ on run argv
     set base_path to item 1 of argv -- without extension
     
     set pasteboard to current application's NSPasteboard's generalPasteboard()
-    set candidate_types to {{current application's NSPasteboardTypePNG, "png"}, {current application's NSPasteboardTypeGIF, "gif"}, {current application's NSPasteboardTypeTIFF, "tiff"}, {current application's NSPasteboardTypeJPEG, "jpg"}, {"public.heic", "heic"}}
-    set image_data to missing value
-    set file_ext to missing value
     
-    repeat with candidate in candidate_types
-        set pb_type to item 1 of candidate
-        set ext to item 2 of candidate
-        
-        set data_candidate to pasteboard's dataForType:pb_type
-        if data_candidate is not missing value then
-            set image_data to data_candidate
-            set file_ext to ext
-            exit repeat
-        end if
+    -- Prefer GIF first to preserve animation when both GIF and PNG are available
+    set candidate_types to {"com.compuserve.gif", "public.gif", "public.png", "public.tiff", "public.jpeg", "public.heic", "public.heif"}
+    
+    -- Build NSArray of NSString types for availableTypeFromArray
+    set ns_strings to {}
+    repeat with t in candidate_types
+        set end of ns_strings to (current application's NSString's stringWithString:t)
     end repeat
+    set ns_array to current application's NSArray's arrayWithArray:ns_strings
+    
+    set chosen_type to pasteboard's availableTypeFromArray:ns_array
+    if chosen_type is missing value then
+        return "error:no_supported_type"
+    end if
+    
+    set chosen_type_text to (chosen_type as text)
+    try
+        set image_data to pasteboard's dataForType:chosen_type
+    on error
+        set image_data to missing value
+    end try
     
     if image_data is missing value then
-        return "error:no_image_data"
+        return "error:no_image_data_for_" & chosen_type_text
+    end if
+    
+    if chosen_type_text is "com.compuserve.gif" then
+        set file_ext to "gif"
+    else if chosen_type_text is "public.gif" then
+        set file_ext to "gif"
+    else if chosen_type_text is "public.tiff" then
+        set file_ext to "tiff"
+    else if chosen_type_text is "public.jpeg" then
+        set file_ext to "jpg"
+    else if chosen_type_text is "public.heic" then
+        set file_ext to "heic"
+    else if chosen_type_text is "public.heif" then
+        set file_ext to "heic"
+    else
+        set file_ext to "png"
     end if
     
     set output_path to base_path & "." & file_ext
