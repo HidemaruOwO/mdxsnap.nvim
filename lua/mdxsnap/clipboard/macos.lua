@@ -76,21 +76,21 @@ function M.fetch_image_path_from_clipboard_macos()
     end
   end
 
-  -- Attempt 2: AppleScript (ObjC bridge) to get raw image data and save as PNG
+  -- Attempt 2: AppleScript (ObjC bridge) to get raw image data and save with original type
   local tmp_dir = fs_utils.get_tmp_dir()
-  if not tmp_dir then return nil, "Could not get/create mdxsnap temp directory.", false end
+  if not tmp_dir then return nil, false, "Could not get/create mdxsnap temp directory." end
 
   local timestamp = tostring(vim.loop.now())
   local target_base = utils.normalize_slashes(tmp_dir .. "/clip_" .. timestamp)
 
   local saved_path, save_err = save_clipboard_image(target_base)
   if not saved_path then
-    return nil, save_err or "Failed to save clipboard image via AppleScript.", false
+    return nil, false, save_err or "Failed to save clipboard image via AppleScript."
   end
 
   if vim.fn.filereadable(saved_path) == 0 or vim.fn.getfsize(saved_path) == 0 then
     fs_utils.cleanup_tmp_file(saved_path)
-    return nil, "Image file was not created or is empty after AppleScript save", false
+    return nil, false, "Image file was not created or is empty after AppleScript save"
   end
 
   return saved_path, true, nil
